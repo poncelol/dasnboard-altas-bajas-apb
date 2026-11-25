@@ -42,6 +42,18 @@ def check_password() -> bool:
 
 
 # ================================================================ lectura
+def _descarga_directa(url: str) -> str:
+    """Convierte un link de compartir de OneDrive/SharePoint en descarga directa."""
+    if "sharepoint.com" in url:  # OneDrive empresarial / Microsoft 365
+        if "download=1" in url:
+            return url
+        return url + ("&" if "?" in url else "?") + "download=1"
+    if "1drv.ms" in url or "onedrive.live.com" in url:  # OneDrive personal
+        token = base64.urlsafe_b64encode(url.encode()).decode().rstrip("=")
+        return f"https://api.onedrive.com/v1.0/shares/u!{token}/root/content"
+    return url
+
+
 def _bytes_from_secrets() -> bytes:
     """[datos] archivo_b64 (gzip+base64) | url (+token) | ruta"""
     d = st.secrets.get("datos", {})
@@ -50,8 +62,12 @@ def _bytes_from_secrets() -> bytes:
         return gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw
     if d.get("url"):
         headers = {"Authorization": f"Bearer {d['token']}"} if d.get("token") else {}
-        r = requests.get(d["url"], headers=headers, timeout=60)
+        r = requests.get(_descarga_directa(d["url"]), headers=headers, timeout=60)
         r.raise_for_status()
+        if b"login.microsoftonline.com" in r.content[:20000] or b"login.live.com" in r.content[:20000]:
+            st.error("El link de OneDrive pide iniciar sesión. Compártelo como "
+                     "'Cualquier persona con el vínculo puede ver'.")
+            st.stop()
         return r.content
     if d.get("ruta"):
         with open(d["ruta"], "rb") as f:
