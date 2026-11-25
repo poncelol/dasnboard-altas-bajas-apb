@@ -332,7 +332,7 @@ PALETA = [AZUL, VERDE, AMARILLO, ROJO, MORADO, CIAN, ROSA, NARANJA]
 COLORES_AUT = {"Daniel Montesinos": AZUL, "Beatriz Cervantes": ROSA}
 COLORES_SUBE_BAJA = {"Sube": ROJO, "Baja": AZUL, "Sin cambio": GRIS}
 COLORES_TIPO = {"Bajó el mínimo": AZUL, "Subió el máximo": ROJO, "Bajó mín. y subió máx.": MORADO,
-                "Otros cambios": GRIS}
+                "Subió el mínimo": NARANJA, "Bajó el máximo": CIAN, "Sin cambio en márgenes": GRIS}
 COLORES_REVISAR = {"Sin señales": VERDE, "Revisar": AMARILLO, "Revisar con prioridad": ROJO}
 ICONOS = {  # nombres de Material Symbols
     "Cambio extremo en máximo": "trending_up", "Máximo solicitado muy alto": "vertical_align_top",
@@ -386,7 +386,7 @@ header[data-testid="stHeader"]{background:#ffffff;box-shadow:0 1px 4px rgba(0,21
 .card-head{font-size:16px;font-weight:600;color:rgba(0,0,0,.88);display:flex;align-items:center;gap:8px;
   margin:0 -20px 4px;padding:16px 20px 14px;border-bottom:1px solid #f0f0f0}
 .card-head .msi{color:#1677ff;font-size:20px}
-.stat{background:#ffffff;border-radius:8px;padding:22px 24px;min-height:150px;
+.stat{background:#ffffff;border-radius:8px;padding:22px 24px;min-height:160px;
   box-shadow:0 1px 2px rgba(0,0,0,.03),0 1px 6px -1px rgba(0,0,0,.02),0 2px 4px rgba(0,0,0,.02);margin-bottom:16px}
 .stat-title{color:rgba(0,0,0,.45);font-size:14px}
 .stat-row{display:flex;align-items:center;gap:8px;margin:8px 0 14px;flex-wrap:wrap}
@@ -416,6 +416,27 @@ header[data-testid="stHeader"]{background:#ffffff;box-shadow:0 1px 4px rgba(0,21
 .aviso{background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:10px 16px;font-size:14px;
   display:flex;gap:10px;align-items:center;color:rgba(0,0,0,.88)}
 .aviso .msi{color:#faad14}
+.nota{font-size:13.5px;color:rgba(0,0,0,.65);margin:2px 0 6px;line-height:1.5;min-height:42px}
+.nota b{color:rgba(0,0,0,.88);font-weight:600}
+.ley{overflow-y:auto;padding-right:4px}
+.ley-pastel{min-height:250px}
+.ley-fila{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f5f5f5;font-size:13.5px}
+.ley-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;display:inline-block}
+.ley-txt{flex:1;color:rgba(0,0,0,.88);min-width:0}
+.ley-num{font-weight:600;color:rgba(0,0,0,.88);min-width:44px;text-align:right;font-variant-numeric:tabular-nums}
+.ley-pct{color:rgba(0,0,0,.45);min-width:38px;text-align:right;font-variant-numeric:tabular-nums}
+.ley-tot{border-bottom:none;border-top:1px solid #e8e8e8;margin-top:2px}
+.ley-tot .ley-txt{color:rgba(0,0,0,.45)}
+.rk-fila{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:13.5px}
+.rk-n{width:22px;color:rgba(0,0,0,.35);font-size:12px;text-align:right;flex-shrink:0}
+.rk-txt{width:42%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(0,0,0,.88)}
+.rk-bar{flex:1;height:8px;background:#f5f5f5;border-radius:100px;overflow:hidden}
+.rk-bar>span{display:block;height:100%;border-radius:100px}
+.chip{display:inline-flex;align-items:center;gap:6px;margin-left:14px;white-space:nowrap}
+.mes-ley{font-size:12.5px;padding:2px 0 6px}
+.mes-ley>div{display:flex;align-items:center;gap:8px;padding:3px 0;color:rgba(0,0,0,.65)}
+.mes-ley b{margin-left:auto;color:rgba(0,0,0,.88)}
+.stat{height:100%}
 </style>
 """
 
@@ -485,9 +506,10 @@ def stat(dest, titulo: str, valor: str, icono: str, color: str, barra: float,
         <div class='stat-note'>{nota}</div></div>""", dest)
 
 
-def anillo(dest, titulo: str, valor: str, pct: float, color: str, icono: str) -> None:
+def anillo(dest, titulo: str, valor: str, pct: float, color: str, icono: str, nota: str = "") -> None:
     html(f"""<div class='stat ring-card'><div><div class='stat-title'>{titulo}</div>
-        <div class='stat-row'>{ic(icono, TEXTO, 22)}<span class='stat-val'>{valor}</span></div></div>
+        <div class='stat-row'>{ic(icono, color, 22)}<span class='stat-val'>{valor}</span></div>
+        <div class='stat-note' style='margin-top:6px'>{nota}</div></div>
         <div class='ring' style='background:conic-gradient({color} {pct:.1f}%, #f0f0f0 0)'>
         <span>{pct:.0f}%</span></div></div>""", dest)
 
@@ -513,10 +535,11 @@ def sube_baja(serie: pd.Series) -> pd.Series:
 def tipo_de_cambio(df_: pd.DataFrame) -> pd.Series:
     """Agrupa las combinaciones mínimo/máximo en 4 tipos fáciles de leer."""
     mn, mx = df_["DETERMINACION_MIN"], df_["DETERMINACION_MAX"]
-    baja_min, sube_max, ambos, otros = COLORES_TIPO
     return pd.Series(np.select(
-        [(mn == "DECREMENTO") & (mx == "INCREMENTO"), mn == "DECREMENTO", mx == "INCREMENTO"],
-        [ambos, baja_min, sube_max], otros), index=df_.index)
+        [(mn == "DECREMENTO") & (mx == "INCREMENTO"), mn == "DECREMENTO", mx == "INCREMENTO",
+         mn == "INCREMENTO", mx == "DECREMENTO"],
+        ["Bajó mín. y subió máx.", "Bajó el mínimo", "Subió el máximo", "Subió el mínimo", "Bajó el máximo"],
+        "Sin cambio en márgenes"), index=df_.index)
 
 
 def inventario_corto(s_: str) -> str:
@@ -527,53 +550,124 @@ def inventario_corto(s_: str) -> str:
         return "Mercancía para tiendas"
     if "INDIGENAS" in u_:
         return "INPI (pueblos indígenas)"
-    return "Otros"
+    if "MAIZ" in u_:
+        return "Componente Maíz para Todos"
+    if "DIF" in u_:
+        return "DIF estatal"
+    if "GOBIERNO" in u_:
+        return "Gobierno estatal"
+    return str(s_).strip().capitalize()
 
 
-def top_n(serie: pd.Series, n: int = 6) -> pd.Series:
-    """Deja los n valores más frecuentes y junta el resto en 'Otros'."""
-    return serie.where(serie.isin(serie.value_counts().index[:n]), "Otros")
+PALETA_LARGA = PALETA + ["#2f54eb", "#a0d911", "#fadb14", "#9254de", "#36cfc9", "#ff7a45", "#597ef7", "#73d13d",
+                         "#f759ab", "#ffc53d", "#40a9ff", "#95de64"]
 
 
-def pastel(serie: pd.Series, colores: dict | None = None, centro: str = "", alto: int = 320,
-           leyenda: bool = True, unidad: str = "cambios"):
-    """Gráfica de pastel (dona)."""
+def conteo(serie: pd.Series, colores: dict | None) -> tuple[pd.Series, list]:
+    """Cuenta todas las categorías (sin agrupar en 'Otros') y les asigna color."""
     vc = serie.value_counts()
     if colores:
         vc = vc.reindex([k for k in colores if k in vc.index] + [k for k in vc.index if k not in colores])
         cols = [colores.get(k, GRIS) for k in vc.index]
     else:
-        if "Otros" in vc.index:
-            vc = pd.concat([vc.drop("Otros"), vc[["Otros"]]])
-        cols = [(GRIS if k == "Otros" else PALETA[i % len(PALETA)]) for i, k in enumerate(vc.index)]
+        cols = [PALETA_LARGA[i % len(PALETA_LARGA)] for i in range(len(vc))]
+    return vc, cols
+
+
+def conclusion(vc: pd.Series, unidad: str) -> str:
+    top, tot = vc.sort_values(ascending=False), vc.sum()
+    return (f"Lo más común: <b>{top.index[0]}</b> — {top.iloc[0]:,} de {tot:,} {unidad} "
+            f"({100 * top.iloc[0] / tot:.0f}%)")
+
+
+def pastel(serie: pd.Series, colores: dict | None = None, centro: str = "", alto: int = 240,
+           unidad: str = "cambios"):
+    """Gráfica de pastel (dona) sin leyenda; la leyenda va aparte, con números."""
+    vc, cols = conteo(serie, colores)
+    pct = 100 * vc / vc.sum()
     fig = go.Figure(go.Pie(
-        labels=vc.index, values=vc.values, hole=0.62, sort=False, textinfo="percent", textposition="inside",
+        labels=vc.index, values=vc.values, hole=0.6, sort=False, textposition="inside",
+        text=[f"{p:.0f}%" if p >= 5 else "" for p in pct], textinfo="text",
         marker=dict(colors=cols, line=dict(color="#ffffff", width=2)), textfont=dict(size=13, color="#fff"),
         insidetextorientation="horizontal",
         hovertemplate="<b>%{label}</b><br>%{value:,} " + unidad + " (%{percent})<extra></extra>"))
-    fig.update_layout(height=alto, font=FUENTE, showlegend=leyenda, paper_bgcolor="rgba(0,0,0,0)",
-                      margin=dict(l=4, r=4, t=8, b=4), uniformtext_minsize=11, uniformtext_mode="hide",
-                      legend=dict(orientation="h", yanchor="top", y=-0.02, x=0.5, xanchor="center"))
+    fig.update_layout(height=alto, font=FUENTE, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
+                      margin=dict(l=0, r=0, t=4, b=4))
     if centro:
         fig.add_annotation(text=centro, showarrow=False, font=dict(size=15, color=TEXTO))
     return fig
 
 
+def leyenda(vc: pd.Series, cols: list, unidad: str, alto: int) -> str:
+    tot = vc.sum()
+    filas = "".join(
+        f"<div class='ley-fila'><span class='ley-dot' style='background:{c_}'></span>"
+        f"<span class='ley-txt'>{k}</span><span class='ley-num'>{v:,}</span>"
+        f"<span class='ley-pct'>{100 * v / tot:.0f}%</span></div>"
+        for k, v, c_ in zip(vc.index, vc.values, cols))
+    return (f"<div class='ley ley-pastel'>{filas}"
+            f"<div class='ley-fila ley-tot'><span class='ley-dot'></span><span class='ley-txt'>Total</span>"
+            f"<span class='ley-num'>{tot:,}</span><span class='ley-pct'>100%</span></div></div>")
+
+
 def card_pastel(dest, titulo: str, icono: str, serie: pd.Series, colores: dict | None = None,
-                centro: str = "", alto: int = 320, unidad: str = "cambios") -> None:
-    mostrar(pastel(serie, colores, centro, alto, unidad=unidad), card(titulo, icono, dest))
+                unidad: str = "cambios", nota: str | None = None, alto: int = 240) -> None:
+    """Tarjeta: frase con la conclusión, pastel a la izquierda y leyenda con números a la derecha."""
+    cont = card(titulo, icono, dest)
+    vc, cols = conteo(serie, colores)
+    if vc.empty:
+        html("<div class='nota'>Sin datos.</div>", cont)
+        return
+    html(f"<div class='nota'>{nota or conclusion(vc, unidad)}</div>", cont)
+    mostrar(pastel(serie, colores, f"<b>{vc.sum():,}</b><br>{unidad}", alto, unidad), cont)
+    html(leyenda(vc, cols, unidad, alto), cont)
+
+
+def card_lista(dest, titulo: str, icono: str, serie: pd.Series, color: str = AZUL,
+               unidad: str = "cambios", alto: int = 300) -> None:
+    """Tarjeta con TODAS las categorías ordenadas de mayor a menor, con barra, número y porcentaje."""
+    cont = card(titulo, icono, dest)
+    vc = serie.value_counts()
+    if vc.empty:
+        html("<div class='nota'>Sin datos.</div>", cont)
+        return
+    tot, mx = vc.sum(), vc.max()
+    filas = "".join(
+        f"<div class='rk-fila'><span class='rk-n'>{i}</span><span class='rk-txt' title='{k}'>{k}</span>"
+        f"<span class='rk-bar'><span style='width:{100 * v / mx:.0f}%;background:{color}'></span></span>"
+        f"<span class='ley-num'>{v:,}</span><span class='ley-pct'>{100 * v / tot:.0f}%</span></div>"
+        for i, (k, v) in enumerate(vc.items(), 1))
+    completo = len(vc) <= 20
+    aviso = "" if completo else f" · desliza la lista para ver los {len(vc)}"
+    estilo_ = "" if completo else f"max-height:{alto}px"
+    html(f"<div class='nota'>{conclusion(vc, unidad)} · {len(vc)} en total{aviso}</div>"
+         f"<div class='ley' style='{estilo_}'>{filas}</div>", cont)
 
 
 def preparar(df_: pd.DataFrame) -> pd.DataFrame:
     d_ = marcar(df_, U).copy()
     d_["Mes (texto)"] = d_["Mes"].map(mes_corto)
-    d_["Mínimo"] = sube_baja(d_["DETERMINACION_MIN"])
-    d_["Máximo"] = sube_baja(d_["DETERMINACION_MAX"])
+    d_["Mínimo"] = sube_baja(d_["DETERMINACION_MIN"]).map(
+        {"Sube": "Subió el mínimo", "Baja": "Bajó el mínimo", "Sin cambio": "Mínimo sin cambio"})
+    d_["Máximo"] = sube_baja(d_["DETERMINACION_MAX"]).map(
+        {"Sube": "Subió el máximo", "Baja": "Bajó el máximo", "Sin cambio": "Máximo sin cambio"})
     d_["Tipo de cambio"] = tipo_de_cambio(d_)
     d_["Inventario (corto)"] = d_["DESCRIPCIÓN DEL INVENTARIO"].map(inventario_corto)
+    d_["Región"] = d_["NOMBRE DE SUCURSAL"].str.title()
+    d_["Producto"] = d_["DESCRIPCION DEL PRODUCTO"].str.title()
     d_["Revisar"] = np.select([d_["Núm. alertas"] >= 3, d_["Núm. alertas"] >= 1],
-                              ["Revisar con prioridad", "Revisar"], "Sin señales")
+                              ["Revisar con prioridad (3 o más señales)", "Revisar (1 o 2 señales)"],
+                              "Sin señales")
     return d_
+
+
+COLORES_MIN = {"Bajó el mínimo": AZUL, "Subió el mínimo": ROJO, "Mínimo sin cambio": GRIS}
+COLORES_MAX = {"Subió el máximo": ROJO, "Bajó el máximo": AZUL, "Máximo sin cambio": GRIS}
+COLORES_REVISAR = {"Sin señales": VERDE, "Revisar (1 o 2 señales)": AMARILLO,
+                   "Revisar con prioridad (3 o más señales)": ROJO}
+COLORES_INV = {"Mercancía para tiendas": AZUL, "INPI (pueblos indígenas)": NARANJA,
+               "Mercancía en oferta": VERDE, "Gobierno estatal": MORADO, "Componente Maíz para Todos": AMARILLO,
+               "DIF estatal": ROSA}
 
 
 # ================================================================ secciones reutilizables
@@ -585,43 +679,70 @@ def bloque_resumen(x: pd.DataFrame, total_general: int) -> None:
     tend = 100 * (pm.iloc[-1] - pm.iloc[-2]) / pm.iloc[-2] if len(pm) > 1 and pm.iloc[-2] else None
 
     seccion("Resumen")
-    c = st.columns(4)
-    stat(c[0], "Cambios autorizados", f"{n:,}", "swap_vert", AZUL, 100 * n / total_general,
-         f"{100 * n / total_general:.0f}% del total · flecha: último mes", tend)
-    stat(c[1], "Solicitudes", f"{n_sol:,}", "description", VERDE, 100 * n_sol / max(n, 1),
-         f"{n / max(n_sol, 1):.1f} productos por solicitud")
-    stat(c[2], "Con alguna señal", f"{100 * con / n:.0f}%", "flag", color_semaforo(100 * con / n),
-         100 * con / n, f"{con:,} cambios para revisar")
-    stat(c[3], "Prioridad alta", f"{prio:,}", "error", ROJO, 100 * prio / n, "cambios con 3 o más señales")
+    c = st.columns(4, gap="medium")
+    nota_tend = (f"{mes_largo(pm.index[-1]).split()[0]}: {pm.iloc[-1]:,} cambios vs. {pm.iloc[-2]:,} en "
+                 f"{mes_largo(pm.index[-2]).split()[0].lower()}" if len(pm) > 1 else "")
+    stat(c[0], "Cambios autorizados", f"{n:,}", "swap_vert", AZUL,
+         100 * n / total_general, nota_tend, tend)
+    stat(c[1], "Solicitudes (folios)", f"{n_sol:,}", "description", VERDE, 100 * n_sol / max(n, 1),
+         f"En promedio {n / max(n_sol, 1):.1f} productos por solicitud")
+    stat(c[2], "Cambios con alguna señal", f"{100 * con / n:.0f}%", "flag", color_semaforo(100 * con / n),
+         100 * con / n, f"{con:,} de {n:,} cambios conviene revisarlos")
+    stat(c[3], "Prioridad alta", f"{prio:,}", "error", ROJO, 100 * prio / n,
+         f"{100 * prio / n:.1f}% de los cambios tiene 3 o más señales")
 
-    seccion("Tipo de movimiento")
-    c = st.columns(3)
-    for col, (tipo, icono) in zip(c, [("Bajó el mínimo", "south"), ("Subió el máximo", "north"),
-                                      ("Bajó mín. y subió máx.", "unfold_more")]):
+    seccion("¿Qué se hizo con los márgenes?")
+    c = st.columns(3, gap="medium")
+    for col, (tipo, icono, expl) in zip(c, [
+            ("Bajó el mínimo", "south", "Se permite vender más barato"),
+            ("Subió el máximo", "north", "Se permite vender más caro"),
+            ("Bajó mín. y subió máx.", "unfold_more", "Se amplió el rango hacia los dos lados")]):
         k = int((x["Tipo de cambio"] == tipo).sum())
-        anillo(col, tipo, f"{k:,} cambios", 100 * k / n, COLORES_TIPO[tipo], icono)
+        anillo(col, tipo, f"{k:,} cambios", 100 * k / n, COLORES_TIPO[tipo], icono,
+               f"{expl} · {k:,} de {n:,} cambios")
+
+
+def bloque_pasteles(x: pd.DataFrame, con_quien: bool) -> None:
+    c = st.columns(2, gap="medium")
+    card_pastel(c[0], "Tipo de cambio", "swap_vert", x["Tipo de cambio"], COLORES_TIPO)
+    card_pastel(c[1], "Semáforo de revisión", "traffic", x["Revisar"], COLORES_REVISAR)
+    c = st.columns(2, gap="medium")
+    card_pastel(c[0], "Margen mínimo", "south", x["Mínimo"], COLORES_MIN)
+    card_pastel(c[1], "Margen máximo", "north", x["Máximo"], COLORES_MAX)
+    c = st.columns(2, gap="medium")
+    card_pastel(c[0], "Inventario", "inventory_2", x["Inventario (corto)"], COLORES_INV)
+    if con_quien:
+        card_pastel(c[1], "¿Quién autorizó?", "group", x["Autorizó"], COLORES_AUT)
+    else:
+        card_lista(c[1], "¿Quién pidió los cambios?", "person_raised_hand", x["Solicitó"].str.title(), MORADO)
+    c = st.columns(2, gap="medium")
+    card_lista(c[0], "Regiones", "map", x["Región"], CIAN)
+    card_lista(c[1], "Productos", "shopping_cart", x["Producto"], NARANJA)
 
 
 def mosaico_meses(x: pd.DataFrame, por_fila: int = 4) -> None:
     meses_x = sorted(x["Mes"].unique())
-    leyenda = "&nbsp;&nbsp;&nbsp;".join(
-        f"<span style='display:inline-flex;align-items:center;gap:6px'><span style='width:10px;height:10px;"
-        f"border-radius:50%;background:{c_}'></span>{t}</span>" for t, c_ in COLORES_TIPO.items())
-    html(f"<div style='font-size:13px;color:{TEXTO_2};margin-bottom:8px'>{leyenda}</div>")
+    ley = "".join(f"<span class='chip'><span class='ley-dot' style='background:{c_}'></span>{t}</span>"
+                  for t, c_ in COLORES_TIPO.items())
+    html(f"<div class='nota' style='margin:0 0 10px'>Cada pastel es un mes; el color muestra qué tipo de cambio se "
+         f"hizo. {ley}</div>")
     for i in range(0, len(meses_x), por_fila):
-        cols = st.columns(por_fila)
+        cols = st.columns(por_fila, gap="medium")
         for col, mes in zip(cols, meses_x[i:i + por_fila]):
             xm = x[x["Mes"] == mes]
             cont = card(mes_largo(mes), "calendar_month", col)
-            mostrar(pastel(xm["Tipo de cambio"], COLORES_TIPO, f"<b>{len(xm):,}</b><br>cambios", 230,
-                           leyenda=False), cont)
-            dom = xm["Tipo de cambio"].value_counts()
-            html(f"<p class='mes-nota'>Lo más común<br><b>{dom.index[0]}</b> "
-                 f"({100 * dom.iloc[0] / len(xm):.0f}%)</p>", cont)
+            mostrar(pastel(xm["Tipo de cambio"], COLORES_TIPO, f"<b>{len(xm):,}</b><br>cambios", 200), cont)
+            vc = xm["Tipo de cambio"].value_counts()
+            html("<div class='mes-ley'>" + "".join(
+                f"<div><span class='ley-dot' style='background:{COLORES_TIPO[t]}'></span>{t}"
+                f"<b>{vc.get(t, 0):,}</b></div>" for t in COLORES_TIPO if vc.get(t, 0)) + "</div>", cont)
 
 
 def barras_mes(x: pd.DataFrame, por_persona: bool) -> None:
     orden = [mes_corto(m) for m in sorted(x["Mes"].unique())]
+    pm_tot = x.groupby("Mes").size()
+    nota = (f"El mes con más cambios fue <b>{mes_largo(pm_tot.idxmax())}</b> ({pm_tot.max():,}) y el de menos "
+            f"<b>{mes_largo(pm_tot.idxmin())}</b> ({pm_tot.min():,}). Promedio: {pm_tot.mean():.0f} por mes.")
     if por_persona:
         pm = x.groupby(["Mes", "Mes (texto)", "Autorizó"]).size().reset_index(name="Cambios").sort_values("Mes")
         fig = px.bar(pm, x="Mes (texto)", y="Cambios", color="Autorizó", text="Cambios",
@@ -630,26 +751,30 @@ def barras_mes(x: pd.DataFrame, por_persona: bool) -> None:
         pm = x.groupby(["Mes", "Mes (texto)"]).size().reset_index(name="Cambios").sort_values("Mes")
         fig = px.bar(pm, x="Mes (texto)", y="Cambios", text="Cambios", category_orders={"Mes (texto)": orden})
         fig.update_traces(marker_color=AZUL)
-    fig.update_traces(textposition="inside", textfont_size=13, marker_cornerradius=4)
+    fig.update_traces(textposition="inside", textfont_size=13, marker_cornerradius=4,
+                      hovertemplate="%{x}: %{y:,} cambios<extra></extra>")
     fig.update_xaxes(title="")
-    fig.update_yaxes(title="")
-    mostrar(estilo(fig, 340, leyenda=por_persona), card("Cambios autorizados por mes", "bar_chart"))
+    fig.update_yaxes(title="Cambios")
+    cont = card("Cambios autorizados por mes", "bar_chart")
+    html(f"<div class='nota'>{nota}</div>", cont)
+    mostrar(estilo(fig, 320, leyenda=por_persona), cont)
 
 
 def mapa_regiones(x: pd.DataFrame) -> None:
-    tm = (x.groupby(["NOMBRE DE SUCURSAL", "NOMBRE DE UNIDAD OP."])
+    tm = (x.groupby(["Región", "NOMBRE DE UNIDAD OP."])
           .agg(Cambios=("Solicitud", "size"), Señales=("Núm. alertas", lambda s: round(100 * (s > 0).mean(), 0)))
           .reset_index())
-    fig = px.treemap(tm, path=[px.Constant("Todas"), "NOMBRE DE SUCURSAL", "NOMBRE DE UNIDAD OP."],
+    fig = px.treemap(tm, path=[px.Constant("Todas las regiones"), "Región", "NOMBRE DE UNIDAD OP."],
                      values="Cambios", color="Señales", range_color=[0, 60],
                      color_continuous_scale=[[0, "#d9f7be"], [0.5, "#fff1b8"], [1, "#ffa39e"]])
     fig.update_traces(texttemplate="<b>%{label}</b><br>%{value} cambios", textfont_size=13,
-                      marker_line_color="#ffffff", marker_line_width=2)
-    fig.update_layout(coloraxis_colorbar=dict(title="% con señal", ticksuffix="%", thickness=12))
-    cont = card("¿Dónde se hacen más cambios?", "map")
-    html(f"<p style='font-size:13px;color:{TEXTO_2};margin:4px 0'>Cada cuadro es una región y, adentro, sus "
-         "unidades operativas. Más grande = más cambios. Más rojo = más señales para revisar.</p>", cont)
-    mostrar(estilo(fig, 480, leyenda=False), cont)
+                      marker_line_color="#ffffff", marker_line_width=2,
+                      hovertemplate="<b>%{label}</b><br>%{value} cambios<br>%{color:.0f}% con señal<extra></extra>")
+    fig.update_layout(coloraxis_colorbar=dict(title="% con<br>señal", ticksuffix="%", thickness=12))
+    cont = card("Mapa de regiones y unidades", "map")
+    html("<div class='nota'>Cada cuadro es una región y, adentro, sus unidades operativas. "
+         "<b>Más grande</b> = más cambios. <b>Más rojo</b> = más cambios con señales para revisar.</div>", cont)
+    mostrar(estilo(fig, 460, leyenda=False), cont)
 
 
 # ================================================================ páginas
@@ -659,14 +784,8 @@ def pagina_general() -> None:
                f"Daniel Montesinos y Beatriz Cervantes juntos · {mes_largo(x['Mes'].min())} a "
                f"{mes_largo(x['Mes'].max())}", "General")
     bloque_resumen(x, len(D))
-    c = st.columns(3)
-    card_pastel(c[0], "Tipo de cambio", "swap_vert", x["Tipo de cambio"], COLORES_TIPO, f"<b>{len(x):,}</b><br>cambios")
-    card_pastel(c[1], "Semáforo", "traffic", x["Revisar"], COLORES_REVISAR, f"<b>{len(x):,}</b><br>cambios")
-    card_pastel(c[2], "¿Quién autorizó?", "group", x["Autorizó"], COLORES_AUT, f"<b>{len(x):,}</b><br>cambios")
-    c = st.columns(3)
-    card_pastel(c[0], "Margen mínimo", "south", x["Mínimo"], COLORES_SUBE_BAJA)
-    card_pastel(c[1], "Margen máximo", "north", x["Máximo"], COLORES_SUBE_BAJA)
-    card_pastel(c[2], "Inventario", "inventory_2", x["Inventario (corto)"])
+    seccion("Detalle de los cambios")
+    bloque_pasteles(x, con_quien=True)
     seccion("Por mes")
     barras_mes(x, por_persona=True)
     seccion("Por región")
@@ -681,14 +800,8 @@ def pagina_persona(nombre: str) -> None:
     encabezado(nombre, f"Cambios que autorizó · {mes_largo(x['Mes'].min())} a {mes_largo(x['Mes'].max())}",
                nombre)
     bloque_resumen(x, len(D))
-    c = st.columns(3)
-    card_pastel(c[0], "Tipo de cambio", "swap_vert", x["Tipo de cambio"], COLORES_TIPO, f"<b>{len(x):,}</b><br>cambios")
-    card_pastel(c[1], "Semáforo", "traffic", x["Revisar"], COLORES_REVISAR, f"<b>{len(x):,}</b><br>cambios")
-    card_pastel(c[2], "Inventario", "inventory_2", x["Inventario (corto)"])
-    c = st.columns(3)
-    card_pastel(c[0], "Margen mínimo", "south", x["Mínimo"], COLORES_SUBE_BAJA)
-    card_pastel(c[1], "Margen máximo", "north", x["Máximo"], COLORES_SUBE_BAJA)
-    card_pastel(c[2], "¿Quién le pide los cambios?", "person_raised_hand", top_n(x["Solicitó"], 5))
+    seccion("Detalle de los cambios")
+    bloque_pasteles(x, con_quien=False)
     seccion("Mes a mes")
     barras_mes(x, por_persona=False)
     mosaico_meses(x)
@@ -711,45 +824,50 @@ def pagina_mes() -> None:
 
     tipo = xm["Tipo de cambio"].value_counts()
     inv = xm["Inventario (corto)"].value_counts()
-    reg = xm["NOMBRE DE SUCURSAL"].value_counts()
-    prod = xm["DESCRIPCION DEL PRODUCTO"].value_counts()
+    reg = xm["Región"].value_counts()
+    prod = xm["Producto"].value_counts()
     pct_sen = 100 * (xm["Núm. alertas"] > 0).mean()
     señales = pd.Series({f: int(xm[f].sum()) for f in ALERTAS}).sort_values(ascending=False)
     quien = xm["Autorizó"].value_counts()
     var = ""
     if prev is not None:
         dif = len(xm) - len(prev)
-        var = (f" · {ic('arrow_upward' if dif >= 0 else 'arrow_downward', VERDE if dif >= 0 else ROJO, 15)}"
-               f"{abs(dif):,} respecto a {mes_largo(meses_d[idx - 1]).split()[0].lower()}")
+        var = (f"{ic('arrow_upward' if dif >= 0 else 'arrow_downward', VERDE if dif >= 0 else ROJO, 15)}"
+               f" {abs(dif):,} {'más' if dif >= 0 else 'menos'} que en "
+               f"{mes_largo(meses_d[idx - 1]).split()[0].lower()} ({len(prev):,})")
     items = [
-        ("swap_vert", f"<b>{len(xm):,} cambios</b> en <b>{xm['Solicitud'].nunique():,} solicitudes</b>", var),
+        ("swap_vert", f"Se autorizaron <b>{len(xm):,} cambios</b> en <b>{xm['Solicitud'].nunique():,} "
+                      "solicitudes</b>", var),
         ("group", "Autorizó: <b>" + ", ".join(f"{a} ({k:,})" for a, k in quien.items()) + "</b>", ""),
         ("category", f"Lo que más se hizo: <b>{tipo.index[0]}</b>",
-         f"{100 * tipo.iloc[0] / len(xm):.0f}% de los cambios"),
-        ("inventory_2", f"Inventario principal: <b>{inv.index[0]}</b>", f"{100 * inv.iloc[0] / len(xm):.0f}%"),
-        ("map", f"Región con más cambios: <b>{reg.index[0].title()}</b>", f"{reg.iloc[0]:,} cambios"),
-        ("shopping_cart", "Productos más movidos: <b>" + ", ".join(p.title() for p in prod.index[:3]) + "</b>", ""),
-        ("flag", f"<b>{pct_sen:.0f}%</b> de los cambios tienen alguna señal",
-         (f"La más común: {EXPLICA[señales.index[0]].lower()} ({señales.iloc[0]:,})"
+         f"{tipo.iloc[0]:,} de {len(xm):,} cambios ({100 * tipo.iloc[0] / len(xm):.0f}%)"),
+        ("inventory_2", f"Inventario principal: <b>{inv.index[0]}</b>",
+         f"{inv.iloc[0]:,} de {len(xm):,} cambios ({100 * inv.iloc[0] / len(xm):.0f}%)"),
+        ("map", f"Región con más cambios: <b>{reg.index[0]}</b>",
+         f"{reg.iloc[0]:,} cambios · {len(reg)} regiones con cambios este mes"),
+        ("shopping_cart", f"Producto más movido: <b>{prod.index[0]}</b>",
+         f"{prod.iloc[0]:,} cambios · {len(prod)} productos distintos este mes"),
+        ("flag", f"<b>{pct_sen:.0f}%</b> de los cambios tiene alguna señal",
+         (f"La más común: {EXPLICA[señales.index[0]].lower()} ({señales.iloc[0]:,} cambios)"
           if señales.iloc[0] > 0 else "")),
     ]
-    c1, c2 = st.columns([2, 3])
+    c1, c2 = st.columns(2, gap="medium")
     cont = card(f"{mes_largo(mes_sel)} en resumen", "summarize", c1)
     html("<ul class='lista'>" + "".join(
         f"<li><span class='dot'>{ic(i)}</span><div>{t}<small>{s}</small></div></li>" for i, t, s in items)
          + "</ul>", cont)
-    with c2:
-        c = st.columns(2)
-        card_pastel(c[0], "Tipo de cambio", "swap_vert", xm["Tipo de cambio"], COLORES_TIPO, alto=300)
-        card_pastel(c[1], "Semáforo", "traffic", xm["Revisar"], COLORES_REVISAR, alto=300)
-    c = st.columns(3)
-    card_pastel(c[0], "¿Quién autorizó?", "group", xm["Autorizó"], COLORES_AUT)
-    card_pastel(c[1], "Margen mínimo", "south", xm["Mínimo"], COLORES_SUBE_BAJA)
-    card_pastel(c[2], "Margen máximo", "north", xm["Máximo"], COLORES_SUBE_BAJA)
-    c = st.columns(3)
-    card_pastel(c[0], "Inventario", "inventory_2", xm["Inventario (corto)"])
-    card_pastel(c[1], "Región", "map", top_n(xm["NOMBRE DE SUCURSAL"].str.title(), 5))
-    card_pastel(c[2], "Productos más movidos", "shopping_cart", top_n(xm["DESCRIPCION DEL PRODUCTO"].str.title(), 5))
+    card_pastel(c2, "Tipo de cambio", "swap_vert", xm["Tipo de cambio"], COLORES_TIPO, alto=300)
+    seccion(f"Detalle de {mes_largo(mes_sel).lower()}")
+    c = st.columns(2, gap="medium")
+    card_pastel(c[0], "Semáforo de revisión", "traffic", xm["Revisar"], COLORES_REVISAR)
+    card_pastel(c[1], "¿Quién autorizó?", "group", xm["Autorizó"], COLORES_AUT)
+    c = st.columns(2, gap="medium")
+    card_pastel(c[0], "Margen mínimo", "south", xm["Mínimo"], COLORES_MIN)
+    card_pastel(c[1], "Margen máximo", "north", xm["Máximo"], COLORES_MAX)
+    c = st.columns(2, gap="medium")
+    card_pastel(c[0], "Inventario", "inventory_2", xm["Inventario (corto)"], COLORES_INV)
+    card_lista(c[1], "Regiones", "map", xm["Región"], CIAN)
+    card_lista(None, "Productos", "shopping_cart", xm["Producto"], NARANJA, alto=360)
 
     seccion("Todos los meses")
     tabla_mes = (x.groupby("Mes")
@@ -770,46 +888,49 @@ def pagina_revisar() -> None:
     encabezado("Qué revisar", "Señales encontradas en los cambios (las dos personas juntas)", "General")
     html(f"<div class='aviso'>{ic('info')}<div>Estas señales <b>no prueban una mala práctica</b>: indican "
          "cambios que vale la pena preguntar. Muchos tienen una explicación válida (temporada, ofertas, "
-         "costos de la región).</div></div>")
+         "costos de la región). Un mismo cambio puede tener varias señales.</div></div>")
     seccion("Señales")
     sen = x.melt(value_vars=list(ALERTAS), var_name="Alerta", value_name="Sí")
     sen = sen[sen["Sí"]]
-    c = st.columns([3, 2])
+    c = st.columns(2, gap="medium")
     if sen.empty:
         st.success("No hay señales para revisar.")
     else:
-        card_pastel(c[0], "¿Qué señales aparecen más?", "flag", top_n(sen["Alerta"].map(EXPLICA), 7),
-                    centro=f"<b>{len(sen):,}</b><br>señales", alto=460, unidad="señales")
+        card_pastel(c[0], "¿Qué señales aparecen más?", "flag", sen["Alerta"].map(EXPLICA), unidad="señales",
+                    alto=420)
     cont = card("¿Qué significa cada señal?", "help", c[1])
     html("<ul class='lista'>" + "".join(
         f"<li><span class='dot'>{ic(ICONOS[f])}</span><div>{EXPLICA[f]}<small>{t.format(**U)}</small></div></li>"
         for f, t in ALERTAS.items()) + "</ul>", cont)
 
     seccion("Tiempos y horarios")
-    c = st.columns(2)
+    c = st.columns(2, gap="medium")
     sol = x.groupby("Solicitud")["Minutos para autorizar"].first().reset_index(name="Minutos")
-    orden_t = ["Menos de 2 min", "Menos de 1 hora", "El mismo día", "1 a 3 días", "Más de 3 días"]
+    orden_t = ["Menos de 2 minutos", "De 2 minutos a 1 hora", "De 1 hora a 1 día", "De 1 a 3 días",
+               "Más de 3 días"]
     sol["Tiempo"] = pd.cut(sol["Minutos"], [-1, 2, 60, 1440, 4320, 1e9], labels=orden_t).astype(str)
-    card_pastel(c[0], "¿Cuánto se tarda en autorizar?", "schedule", sol["Tiempo"],
-                dict(zip(orden_t, [ROJO, "#95de64", VERDE, AMARILLO, NARANJA])),
-                f"<b>{len(sol):,}</b><br>solicitudes", alto=380, unidad="solicitudes")
+    card_pastel(c[0], "¿Cuánto se tarda en autorizar una solicitud?", "schedule", sol["Tiempo"],
+                dict(zip(orden_t, [ROJO, "#95de64", VERDE, AMARILLO, NARANJA])), unidad="solicitudes")
     horario = pd.Series(np.where(x["Fuera de horario"], "Noche o fin de semana", "Horario normal"))
-    card_pastel(c[1], f"¿Cuándo se autoriza? (normal: L-V {U['u_hini']} a {U['u_hfin']} h)", "dark_mode",
-                horario, {"Horario normal": CIAN, "Noche o fin de semana": "#1d39c4"}, alto=380)
+    card_pastel(c[1], "¿Cuándo se autoriza?", "dark_mode", horario,
+                {"Horario normal": CIAN, "Noche o fin de semana": "#1d39c4"},
+                nota=f"Horario normal = lunes a viernes de {U['u_hini']} a {U['u_hfin']} h. "
+                     f"<b>{int(x['Fuera de horario'].sum()):,}</b> cambios se autorizaron fuera de ese horario.")
 
     seccion("Margen máximo: antes y después")
     fig = px.scatter(x, x="SCMARMAXACT", y="SCMARMAXSOL", color="Revisar", color_discrete_map=COLORES_REVISAR,
                      opacity=0.8, category_orders={"Revisar": list(COLORES_REVISAR)},
-                     hover_data={"DESCRIPCION DEL PRODUCTO": True, "NOMBRE DE SUCURSAL": True, "Mes": True,
-                                 "Alertas": True, "Revisar": False})
+                     hover_data={"Producto": True, "Región": True, "Mes": True, "Alertas": True, "Revisar": False})
     lim = float(max(x["SCMARMAXACT"].max(), x["SCMARMAXSOL"].max()))
     fig.add_trace(go.Scatter(x=[0, lim], y=[0, lim], mode="lines", line=dict(dash="dot", color="#bfbfbf"),
                              name="Sin cambio"))
     fig.update_traces(marker_size=9, selector=dict(mode="markers"))
-    fig.update_layout(xaxis_title="Máximo antes", yaxis_title="Máximo después")
-    cont = card("Cada punto es un cambio: los que quedan muy arriba de la línea gris son subidas grandes",
-                "scatter_plot")
-    mostrar(estilo(fig, 460), cont)
+    fig.update_layout(xaxis_title="Margen máximo antes", yaxis_title="Margen máximo después")
+    cont = card("Margen máximo antes y después del cambio", "scatter_plot")
+    subio = int((x["SCMARMAXSOL"] > x["SCMARMAXACT"]).sum())
+    html(f"<div class='nota'>Cada punto es un cambio. Los puntos <b>arriba de la línea gris</b> son subidas del "
+         f"máximo ({subio:,}); entre más arriba, más grande la subida.</div>", cont)
+    mostrar(estilo(fig, 440), cont)
 
 
 def pagina_casos() -> None:
@@ -817,29 +938,32 @@ def pagina_casos() -> None:
     r = x[x["Núm. alertas"] >= 3].sort_values(["Núm. alertas", "Cambio máx."], ascending=False)
     encabezado("Casos a revisar", "Cambios con 3 o más señales: los primeros que conviene revisar", "General")
     seccion("Resumen")
-    c = st.columns(3)
+    c = st.columns(3, gap="medium")
     stat(c[0], "Cambios con prioridad", f"{len(r):,}", "error", ROJO, 100 * len(r) / len(x),
-         f"{100 * len(r) / len(x):.1f}% de todos los cambios")
-    stat(c[1], "Solicitudes", f"{r['Solicitud'].nunique():,}", "description", AMARILLO,
-         100 * r["Solicitud"].nunique() / x["Solicitud"].nunique(), "folios con al menos un caso")
+         f"{len(r):,} de {len(x):,} cambios ({100 * len(r) / len(x):.1f}%)")
+    stat(c[1], "Solicitudes involucradas", f"{r['Solicitud'].nunique():,}", "description", AMARILLO,
+         100 * r["Solicitud"].nunique() / x["Solicitud"].nunique(),
+         f"de {x['Solicitud'].nunique():,} solicitudes en total")
     stat(c[2], "Productos distintos", f"{r['CVE. DE PRODUCTO'].nunique():,}", "shopping_cart", MORADO,
-         100 * r["CVE. DE PRODUCTO"].nunique() / x["CVE. DE PRODUCTO"].nunique(), "")
+         100 * r["CVE. DE PRODUCTO"].nunique() / x["CVE. DE PRODUCTO"].nunique(),
+         f"de {x['CVE. DE PRODUCTO'].nunique():,} productos con cambios")
     if r.empty:
         return
-    st.write("")
-    c = st.columns(3)
-    card_pastel(c[0], "¿Quién los autorizó?", "group", r["Autorizó"], COLORES_AUT)
-    card_pastel(c[1], "¿De qué región son?", "map", top_n(r["NOMBRE DE SUCURSAL"].str.title(), 5))
-    card_pastel(c[2], "¿Qué tipo de cambio son?", "swap_vert", r["Tipo de cambio"], COLORES_TIPO)
+    seccion("¿Cómo son estos casos?")
+    c = st.columns(2, gap="medium")
+    card_pastel(c[0], "¿Quién los autorizó?", "group", r["Autorizó"], COLORES_AUT, unidad="casos")
+    card_pastel(c[1], "¿Qué tipo de cambio son?", "swap_vert", r["Tipo de cambio"], COLORES_TIPO, unidad="casos")
+    c = st.columns(2, gap="medium")
+    card_lista(c[0], "Regiones", "map", r["Región"], CIAN, unidad="casos")
+    card_lista(c[1], "Productos", "shopping_cart", r["Producto"], NARANJA, unidad="casos")
     seccion("Lista de casos")
-    cols = ["Núm. alertas", "Alertas", "Autorizó", "Mes (texto)", "NOMBRE DE SUCURSAL", "NOMBRE DE UNIDAD OP.",
-            "SCFOLIO", "DESCRIPCION DEL PRODUCTO", "SCMARMINACT", "SCMARMINSOL", "SCMARMAXACT", "SCMARMAXSOL"]
-    card(f"{len(r):,} casos", "fact_check").dataframe(
+    cols = ["Núm. alertas", "Alertas", "Autorizó", "Mes (texto)", "Región", "NOMBRE DE UNIDAD OP.",
+            "SCFOLIO", "Producto", "SCMARMINACT", "SCMARMINSOL", "SCMARMAXACT", "SCMARMAXSOL"]
+    card(f"{len(r):,} casos, del que tiene más señales al que tiene menos", "fact_check").dataframe(
         r[cols], width=ANCHO, hide_index=True,
         column_config={
             "Núm. alertas": st.column_config.ProgressColumn("Señales", min_value=0, max_value=6, format="%d"),
-            "Alertas": "¿Por qué?", "Mes (texto)": "Mes", "NOMBRE DE SUCURSAL": "Región",
-            "NOMBRE DE UNIDAD OP.": "Unidad", "SCFOLIO": "Folio", "DESCRIPCION DEL PRODUCTO": "Producto",
+            "Alertas": "¿Por qué?", "Mes (texto)": "Mes", "NOMBRE DE UNIDAD OP.": "Unidad", "SCFOLIO": "Folio",
             "SCMARMINACT": "Mín. antes", "SCMARMINSOL": "Mín. después",
             "SCMARMAXACT": "Máx. antes", "SCMARMAXSOL": "Máx. después",
         },
