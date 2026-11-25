@@ -78,12 +78,15 @@ def _bytes_from_secrets() -> bytes:
 
 def _parse_html_xls(text: str) -> pd.DataFrame:
     """El .xls del sistema es en realidad una tabla HTML."""
-    hdr = re.findall(r"<th>(.*?)</th>", text)
+    limpiar = lambda c: re.sub(r"<[^>]+>", "", c).replace("&nbsp;", " ").strip()  # noqa: E731
+    hdr = [limpiar(h) for h in re.findall(r"<th[^>]*>(.*?)</th>", text, flags=re.S | re.I)]
     rows = []
-    for r in re.findall(r"<tr>(.*?)</tr>", text, flags=re.S):
-        cells = re.findall(r"<td>(.*?)</td>", r, flags=re.S)
-        if cells:
-            rows.append([re.sub(r"<[^>]+>", "", c).strip() for c in cells])
+    for r in re.findall(r"<tr[^>]*>(.*?)</tr>", text, flags=re.S | re.I):
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", r, flags=re.S | re.I)
+        if cells and (not hdr or len(cells) == len(hdr)):
+            rows.append([limpiar(c) for c in cells])
+    if not hdr:
+        return pd.DataFrame()
     return pd.DataFrame(rows, columns=hdr)
 
 
@@ -96,15 +99,45 @@ def _corto(s: str) -> str:
     return re.sub(r"\s*\(.*\)$", "", str(s)).title()
 
 
+REQUERIDAS = [
+    "SCMARMINACT", "SCMARMINSOL", "SCMARMAXACT", "SCMARMAXSOL", "FCHSOL", "FCHAUT",
+    "DETERMINACION_MIN", "DETERMINACION_MAX", "DESCRIPCION DEL PRODUCTO", "SUCURSAL",
+    "UNIDAD OPERATIVA", "SCFOLIO", "CVE. DE PRODUCTO", "CLAVE DE INVENTARIO",
+    "AUTORIZO", "SOLICITO",
+]
+
+
 @st.cache_data(ttl=3600, show_spinner="Cargando datos…")
 def cargar() -> pd.DataFrame:
     b = _bytes_from_secrets()
-    head = b[:200].lower()
-    if b"<html" in head or b"<table" in head:
-        df = _parse_html_xls(b.decode("utf-8", errors="replace"))
-    else:
-        df = pd.read_excel(io.BytesIO(b))
-    df.columns = [c.strip() for c in df.columns]
+    head = b[:2000].lower()
+    df = pd.DataFrame()
+    try:
+        if b"<html" in head or b"<table" in head or b"<th" in head:
+            df = _parse_html_xls(b.decode("utf-8", errors="replace"))
+        else:
+            # Excel real (p. ej. si se abrió y guardó en Excel): buscar la fila de encabezados
+            raw = pd.read_excel(io.BytesIO(b), header=None, dtype=str)
+            fila = next((i for i, r in raw.iterrows()
+                         if "SCFOLIO" in [str(x).strip() for x in r.values]), None)
+            if fila is not None:
+                df = raw.iloc[fila + 1:].reset_index(drop=True)
+                df.columns = [str(x) for x in raw.iloc[fila].values]
+    except Exception as e:  # noqa: BLE001
+        st.error(f"No se pudo leer el archivo descargado: {type(e).__name__}")
+    df.columns = [str(c).strip() for c in df.columns]
+    faltan = [c for c in REQUERIDAS if c not in df.columns]
+    if faltan:
+        st.error("El archivo recibido no tiene las columnas esperadas. "
+                 "Si usas un link de OneDrive, probablemente no se está descargando el archivo "
+                 "sino una página web: revisa que esté compartido como "
+                 "'Cualquier persona con el vínculo'.")
+        with st.expander("Diagnóstico"):
+            st.write(f"Tamaño recibido: {len(b):,} bytes")
+            st.write("Columnas encontradas:", list(df.columns)[:30])
+            st.write("Faltan:", faltan)
+            st.code(b[:600].decode("utf-8", errors="replace"))
+        st.stop()
     for c in ["SCMARMINACT", "SCMARMINSOL", "SCMARMAXACT", "SCMARMAXSOL"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     for c in ["FCHSOL", "FCHAUT"]:
