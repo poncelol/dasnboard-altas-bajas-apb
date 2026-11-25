@@ -333,7 +333,6 @@ COLORES_AUT = {"Daniel Montesinos": AZUL, "Beatriz Cervantes": ROSA}
 COLORES_SUBE_BAJA = {"Sube": ROJO, "Baja": AZUL, "Sin cambio": GRIS}
 COLORES_TIPO = {"Bajó el mínimo": AZUL, "Subió el máximo": ROJO, "Bajó mín. y subió máx.": MORADO,
                 "Subió el mínimo": NARANJA, "Bajó el máximo": CIAN, "Sin cambio en márgenes": GRIS}
-COLORES_REVISAR = {"Sin señales": VERDE, "Revisar": AMARILLO, "Revisar con prioridad": ROJO}
 ICONOS = {  # nombres de Material Symbols
     "Cambio extremo en máximo": "trending_up", "Máximo solicitado muy alto": "vertical_align_top",
     "Baja fuerte del mínimo": "trending_down", "Mínimo en cero o negativo": "exposure_zero",
@@ -656,15 +655,48 @@ def preparar(df_: pd.DataFrame) -> pd.DataFrame:
     d_["Región"] = d_["NOMBRE DE SUCURSAL"].str.title()
     d_["Producto"] = d_["DESCRIPCION DEL PRODUCTO"].str.title()
     d_["Revisar"] = np.select([d_["Núm. alertas"] >= 3, d_["Núm. alertas"] >= 1],
-                              ["Revisar con prioridad (3 o más señales)", "Revisar (1 o 2 señales)"],
-                              "Sin señales")
+                              [ROJO_TXT, AMARILLO_TXT], VERDE_TXT)
     return d_
 
 
 COLORES_MIN = {"Bajó el mínimo": AZUL, "Subió el mínimo": ROJO, "Mínimo sin cambio": GRIS}
 COLORES_MAX = {"Subió el máximo": ROJO, "Bajó el máximo": AZUL, "Máximo sin cambio": GRIS}
-COLORES_REVISAR = {"Sin señales": VERDE, "Revisar (1 o 2 señales)": AMARILLO,
-                   "Revisar con prioridad (3 o más señales)": ROJO}
+VERDE_TXT = "Verde: sin señales"
+AMARILLO_TXT = "Amarillo: 1 o 2 señales"
+ROJO_TXT = "Rojo: 3 o más señales"
+COLORES_REVISAR = {VERDE_TXT: VERDE, AMARILLO_TXT: AMARILLO, ROJO_TXT: ROJO}
+
+
+def card_semaforo(dest, serie: pd.Series) -> None:
+    """Semáforo de revisión, explicado paso a paso."""
+    cont = card("Semáforo de revisión: ¿qué cambios conviene revisar?", "traffic", dest)
+    vc = serie.value_counts()
+    tot = int(vc.sum())
+    n = {k: int(vc.get(k, 0)) for k in COLORES_REVISAR}
+    html(f"""<div class='nota' style='min-height:0'>A cada cambio se le revisan <b>12 señales</b> de algo
+        inusual (por ejemplo: <i>se autorizó en segundos</i>, <i>subieron mucho el margen máximo</i> o
+        <i>el mismo producto se cambió otra vez en pocos días</i>). Según <b>cuántas señales tiene</b>,
+        el cambio recibe un color:</div>""", cont)
+    mostrar(pastel(serie, COLORES_REVISAR, f"<b>{tot:,}</b><br>cambios", 220), cont)
+    filas = [
+        (VERDE, "Verde", "Sin señales", "No tiene nada inusual. No requiere revisión.", n[VERDE_TXT]),
+        (AMARILLO, "Amarillo", "1 o 2 señales",
+         "Tiene algo inusual. Puede tener explicación, pero conviene preguntar.", n[AMARILLO_TXT]),
+        (ROJO, "Rojo", "3 o más señales",
+         "Junta varias cosas inusuales. Son los primeros que hay que revisar "
+         "(están en la página <b>Casos a revisar</b>).", n[ROJO_TXT]),
+    ]
+    html("<div class='ley'>" + "".join(
+        f"<div class='ley-fila' style='align-items:flex-start'>"
+        f"<span class='ley-dot' style='background:{c_};margin-top:5px'></span>"
+        f"<span class='ley-txt'><b>{col}: {qué}</b><br><span style='color:{TEXTO_2};font-size:12.5px'>"
+        f"{desc}</span></span><span class='ley-num'>{k:,}</span>"
+        f"<span class='ley-pct'>{100 * k / max(tot, 1):.0f}%</span></div>"
+        for c_, col, qué, desc, k in filas) + "</div>"
+        f"<div class='nota' style='min-height:0;margin-top:8px'><b>Ejemplo:</b> si en un cambio subieron mucho el "
+        "máximo, se autorizó en segundos y el producto ya se había cambiado hace pocos días, tiene 3 señales "
+        "y queda en <b>rojo</b>. El semáforo no dice que algo esté mal hecho; solo indica por dónde empezar a "
+        "revisar.</div>", cont)
 COLORES_INV = {"Mercancía para tiendas": AZUL, "INPI (pueblos indígenas)": NARANJA,
                "Mercancía en oferta": VERDE, "Gobierno estatal": MORADO, "Componente Maíz para Todos": AMARILLO,
                "DIF estatal": ROSA}
@@ -705,7 +737,7 @@ def bloque_resumen(x: pd.DataFrame, total_general: int) -> None:
 def bloque_pasteles(x: pd.DataFrame, con_quien: bool) -> None:
     c = st.columns(2, gap="medium")
     card_pastel(c[0], "Tipo de cambio", "swap_vert", x["Tipo de cambio"], COLORES_TIPO)
-    card_pastel(c[1], "Semáforo de revisión", "traffic", x["Revisar"], COLORES_REVISAR)
+    card_semaforo(c[1], x["Revisar"])
     c = st.columns(2, gap="medium")
     card_pastel(c[0], "Margen mínimo", "south", x["Mínimo"], COLORES_MIN)
     card_pastel(c[1], "Margen máximo", "north", x["Máximo"], COLORES_MAX)
@@ -859,7 +891,7 @@ def pagina_mes() -> None:
     card_pastel(c2, "Tipo de cambio", "swap_vert", xm["Tipo de cambio"], COLORES_TIPO, alto=300)
     seccion(f"Detalle de {mes_largo(mes_sel).lower()}")
     c = st.columns(2, gap="medium")
-    card_pastel(c[0], "Semáforo de revisión", "traffic", xm["Revisar"], COLORES_REVISAR)
+    card_semaforo(c[0], xm["Revisar"])
     card_pastel(c[1], "¿Quién autorizó?", "group", xm["Autorizó"], COLORES_AUT)
     c = st.columns(2, gap="medium")
     card_pastel(c[0], "Margen mínimo", "south", xm["Mínimo"], COLORES_MIN)
