@@ -63,6 +63,11 @@ def _bytes_from_secrets() -> bytes:
     if d.get("url"):
         headers = {"Authorization": f"Bearer {d['token']}"} if d.get("token") else {}
         r = requests.get(_descarga_directa(d["url"]), headers=headers, timeout=60)
+        if r.status_code in (401, 403):
+            st.error(f"OneDrive negó el acceso al archivo ({r.status_code}). El link debe estar "
+                     "compartido como 'Cualquier persona con el vínculo puede ver'. Si tu "
+                     "organización no lo permite, usa archivo_b64 (generar_secret.py).")
+            st.stop()
         r.raise_for_status()
         if b"login.microsoftonline.com" in r.content[:20000] or b"login.live.com" in r.content[:20000]:
             st.error("El link de OneDrive pide iniciar sesión. Compártelo como "
