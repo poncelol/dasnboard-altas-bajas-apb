@@ -422,9 +422,10 @@ PALETA = ["#4c78a8", "#f58518", "#54a24b", "#e45756", "#72b7b2", "#eeca3b", "#b2
 def tipo_de_cambio(df_: pd.DataFrame) -> pd.Series:
     """Agrupa las combinaciones mínimo/máximo en 4 tipos fáciles de leer."""
     mn, mx = df_["DETERMINACION_MIN"], df_["DETERMINACION_MAX"]
+    baja_min, sube_max, ambos, otros = COLORES_TIPO
     return pd.Series(np.select(
         [(mn == "DECREMENTO") & (mx == "INCREMENTO"), mn == "DECREMENTO", mx == "INCREMENTO"],
-        list(COLORES_TIPO)[:3], list(COLORES_TIPO)[3]), index=df_.index)
+        [ambos, baja_min, sube_max], otros), index=df_.index)
 
 
 def inventario_corto(s_: str) -> str:
@@ -756,7 +757,7 @@ with tabs[1]:
 
     # resumen escrito automático
     tipo = x["Tipo de cambio"].value_counts()
-    inv = x["DESCRIPCIÓN DEL INVENTARIO"].value_counts()
+    inv = x["Inventario (corto)"].value_counts()
     reg = x["NOMBRE DE SUCURSAL"].value_counts()
     prod = x["DESCRIPCION DEL PRODUCTO"].value_counts()
     pct_sen = 100 * (x["Núm. alertas"] > 0).mean()
@@ -768,7 +769,7 @@ with tabs[1]:
            f"{mes_largo(meses_d[idx - 1]).split()[0].lower()})" if prev is not None else "") + ".",
         f"Autorizó: <b>{', '.join(f'{a} ({n:,})' for a, n in quien.items())}</b>.",
         f"Lo que más se hizo: <b>{tipo.index[0]}</b> ({100 * tipo.iloc[0] / len(x):.0f}% de los cambios).",
-        f"Inventario principal: <b>{inv.index[0].title()}</b> ({100 * inv.iloc[0] / len(x):.0f}%).",
+        f"Inventario principal: <b>{inv.index[0]}</b> ({100 * inv.iloc[0] / len(x):.0f}%).",
         f"Región con más cambios: <b>{reg.index[0].title()}</b> ({reg.iloc[0]:,}).",
         f"Productos más movidos: <b>{', '.join(p.title() for p in prod.index[:3])}</b>.",
         f"<b>{pct_sen:.0f}%</b> de los cambios tienen alguna señal"
@@ -809,7 +810,7 @@ with tabs[1]:
                          "% con señal": ("Núm. alertas", lambda s: round(100 * (s > 0).mean()))})
                  .reset_index())
     tabla_mes["Mes"] = tabla_mes["Mes"].map(mes_largo)
-    st.dataframe(tabla_mes, width=ANCHO, hide_index=True,
+    st.dataframe(tabla_mes, width=ANCHO, hide_index=True, height=38 * (len(tabla_mes) + 1) + 4,
                  column_config={"% con señal": st.column_config.ProgressColumn(
                      "% con señal", min_value=0, max_value=100, format="%d%%")})
 
