@@ -18,11 +18,9 @@ import plotly.graph_objects as go
 import requests
 import streamlit as st
 
-st.set_page_config(page_title="Movimientos de márgenes 2026", layout="wide")
+st.set_page_config(page_title="Márgenes 2026", page_icon=":material/bar_chart:", layout="wide")
 
 MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
-COLORES_DET = {"DECREMENTO": "#1f77b4", "INCREMENTO": "#d62728", "SIN CAMBIOS": "#bdbdbd"}
-COLORES_AUT = {"Daniel Montesinos": "#4c78a8", "Beatriz Cervantes": "#f58518"}
 ANCHO = "stretch"
 
 
@@ -324,16 +322,24 @@ def a_excel(d: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
-# ================================================================ estilo visual
-px.defaults.template = "plotly_white"
-FUENTE = dict(size=15)
-VERDE, AMARILLO, ROJO, GRIS = "#2e7d32", "#f9a825", "#c62828", "#9e9e9e"
-COLORES_SUBE_BAJA = {"Sube": "#c62828", "Baja": "#1565c0", "Sin cambio": "#bdbdbd"}
-ICONOS = {
-    "Cambio extremo en máximo": "📈", "Máximo solicitado muy alto": "⬆️", "Baja fuerte del mínimo": "⬇️",
-    "Mínimo en cero o negativo": "0️⃣", "Rango invertido": "🔀", "Ampliación doble": "↔️",
-    "Autorización exprés": "⚡", "Autorización tardía": "🐢", "Fuera de horario": "🌙",
-    "Cambio repetido": "🔁", "Autorización en lote": "📦", "Auto-aprobación": "🪞",
+# ================================================================ estilo visual (tipo Ant Design)
+AZUL, VERDE, AMARILLO, ROJO = "#1677ff", "#52c41a", "#faad14", "#ff4d4f"
+MORADO, CIAN, ROSA, NARANJA = "#722ed1", "#13c2c2", "#eb2f96", "#fa8c16"
+GRIS = "#d9d9d9"
+TEXTO, TEXTO_2 = "rgba(0,0,0,0.88)", "rgba(0,0,0,0.45)"
+FUENTE = dict(family="Inter, -apple-system, Segoe UI, Roboto, sans-serif", size=13, color=TEXTO)
+PALETA = [AZUL, VERDE, AMARILLO, ROJO, MORADO, CIAN, ROSA, NARANJA]
+COLORES_AUT = {"Daniel Montesinos": AZUL, "Beatriz Cervantes": ROSA}
+COLORES_SUBE_BAJA = {"Sube": ROJO, "Baja": AZUL, "Sin cambio": GRIS}
+COLORES_TIPO = {"Bajó el mínimo": AZUL, "Subió el máximo": ROJO, "Bajó mín. y subió máx.": MORADO,
+                "Otros cambios": GRIS}
+COLORES_REVISAR = {"Sin señales": VERDE, "Revisar": AMARILLO, "Revisar con prioridad": ROJO}
+ICONOS = {  # nombres de Material Symbols
+    "Cambio extremo en máximo": "trending_up", "Máximo solicitado muy alto": "vertical_align_top",
+    "Baja fuerte del mínimo": "trending_down", "Mínimo en cero o negativo": "exposure_zero",
+    "Rango invertido": "swap_vert", "Ampliación doble": "unfold_more", "Autorización exprés": "bolt",
+    "Autorización tardía": "hourglass_bottom", "Fuera de horario": "dark_mode", "Cambio repetido": "repeat",
+    "Autorización en lote": "inventory_2", "Auto-aprobación": "how_to_reg",
 }
 EXPLICA = {  # versión corta y en lenguaje simple
     "Cambio extremo en máximo": "Subieron mucho el margen máximo",
@@ -351,6 +357,67 @@ EXPLICA = {  # versión corta y en lenguaje simple
 }
 NOMBRE_MES = {f"{m:02d}": n for m, n in zip(range(1, 13), ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
               "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])}
+U = {"u_dmax": 40.0, "u_rmax": 100, "u_maxalto": 100.0, "u_dmin": 10.0, "u_expres": 2.0,
+     "u_tarde": 72, "u_hini": 8, "u_hfin": 19, "u_dias": 30, "u_lote": 5}  # umbrales fijos de las señales
+
+CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block');
+.msi{font-family:'Material Symbols Outlined';font-weight:normal;font-style:normal;line-height:1;letter-spacing:normal;
+  text-transform:none;display:inline-block;white-space:nowrap;direction:ltr;font-feature-settings:'liga';
+  -webkit-font-smoothing:antialiased;vertical-align:middle}
+.block-container{padding-top:4.75rem;max-width:1440px}
+header[data-testid="stHeader"]{background:#ffffff;box-shadow:0 1px 4px rgba(0,21,41,.08)}
+/* menú lateral */
+[data-testid="stSidebarNavLink"]{border-radius:8px;margin:2px 8px}
+[data-testid="stSidebarNavLink"][aria-current="page"]{background:rgba(22,119,255,.16)!important;
+  box-shadow:inset 3px 0 0 #1677ff}
+[data-testid="stSidebarNavLink"][aria-current="page"] span{color:#ffffff!important;font-weight:600}
+[data-testid="stNavSectionHeader"]{font-size:11px!important;letter-spacing:.08em;text-transform:uppercase;
+  color:rgba(255,255,255,.45)!important;font-weight:600}
+/* encabezados */
+.page-title{font-size:26px!important;font-weight:600;color:rgba(0,0,0,.88);margin:0;line-height:1.3}
+.page-sub{color:rgba(0,0,0,.45);font-size:14px;margin:4px 0 0}
+.sec-label{font-size:12px;font-weight:600;letter-spacing:.06em;color:rgba(0,0,0,.45);text-transform:uppercase;
+  margin:26px 0 10px}
+/* tarjetas */
+[class*="st-key-card"]{background:#ffffff;border-radius:8px;border:none!important;padding:0 20px 12px;
+  box-shadow:0 1px 2px rgba(0,0,0,.03),0 1px 6px -1px rgba(0,0,0,.02),0 2px 4px rgba(0,0,0,.02)}
+.card-head{font-size:16px;font-weight:600;color:rgba(0,0,0,.88);display:flex;align-items:center;gap:8px;
+  margin:0 -20px 4px;padding:16px 20px 14px;border-bottom:1px solid #f0f0f0}
+.card-head .msi{color:#1677ff;font-size:20px}
+.stat{background:#ffffff;border-radius:8px;padding:22px 24px;min-height:150px;
+  box-shadow:0 1px 2px rgba(0,0,0,.03),0 1px 6px -1px rgba(0,0,0,.02),0 2px 4px rgba(0,0,0,.02);margin-bottom:16px}
+.stat-title{color:rgba(0,0,0,.45);font-size:14px}
+.stat-row{display:flex;align-items:center;gap:8px;margin:8px 0 14px;flex-wrap:wrap}
+.stat-row .msi{font-size:28px}
+.stat-val{font-size:28px;font-weight:500;color:rgba(0,0,0,.88);line-height:1.1}
+.stat-trend{font-size:13px;display:flex;align-items:center}
+.stat-trend .msi{font-size:16px}
+.stat-bar{height:8px;background:#f0f0f0;border-radius:100px;overflow:hidden}
+.stat-bar>div{height:100%;border-radius:100px}
+.stat-note{color:rgba(0,0,0,.45);font-size:12px;margin-top:10px}
+.ring-card{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:120px}
+.ring-card .stat-row{margin:6px 0 0}
+.ring-card .stat-val{font-size:22px;font-weight:600}
+.ring{width:80px;height:80px;border-radius:50%;display:grid;place-items:center;flex-shrink:0}
+.ring>span{width:66px;height:66px;border-radius:50%;background:#ffffff;display:grid;place-items:center;
+  font-size:17px;color:rgba(0,0,0,.88)}
+.lista{list-style:none;padding:0;margin:4px 0}
+.lista li{display:flex;gap:12px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #f5f5f5;
+  font-size:14px;color:rgba(0,0,0,.88)}
+.lista li:last-child{border-bottom:none}
+.lista .dot{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;
+  background:rgba(22,119,255,.08);color:#1677ff}
+.lista .dot .msi{font-size:18px}
+.lista small{color:rgba(0,0,0,.45);display:block;font-size:12px}
+.mes-nota{text-align:center;font-size:13px;color:rgba(0,0,0,.45);margin:-6px 0 4px}
+.mes-nota b{color:rgba(0,0,0,.88);font-weight:600}
+.aviso{background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:10px 16px;font-size:14px;
+  display:flex;gap:10px;align-items:center;color:rgba(0,0,0,.88)}
+.aviso .msi{color:#faad14}
+</style>
+"""
 
 
 def mes_largo(m: str) -> str:
@@ -370,52 +437,77 @@ def mes_corto(m: str) -> str:
         return str(m)
 
 
+def ic(nombre: str, color: str | None = None, tam: int | None = None) -> str:
+    estilo_ = (f"color:{color};" if color else "") + (f"font-size:{tam}px;" if tam else "")
+    return f"<span class='msi' style='{estilo_}'>{nombre}</span>"
+
+
+def html(texto: str, dest=None) -> None:
+    (dest or st).markdown(re.sub(r"\n\s*", " ", texto), unsafe_allow_html=True)
+
+
 def color_semaforo(pct: float) -> str:
     return VERDE if pct < 10 else AMARILLO if pct < 25 else ROJO
 
 
-def tarjeta(col, titulo: str, valor: str, nota: str = "", color: str = "#37474f", icono: str = "",
-            compacta: bool = False) -> None:
-    alto, pad, tam = ("130px", "12px 14px", "1.8rem") if compacta else ("170px", "18px 20px", "2.6rem")
-    col.markdown(
-        f"""<div style="background:{color};border-radius:16px;padding:{pad};color:#fff;overflow:hidden;
-        height:{alto};box-shadow:0 2px 6px rgba(0,0,0,.15)">
-        <div style="font-size:1.05rem;opacity:.95">{icono} {titulo}</div>
-        <div style="font-size:{tam};font-weight:700;line-height:1.2;margin:6px 0;white-space:nowrap">{valor}</div>
-        <div style="font-size:.95rem;opacity:.95">{nota}</div></div>""",
-        unsafe_allow_html=True,
-    )
+def encabezado(titulo: str, sub: str, excel_de: str) -> None:
+    c1, c2 = st.columns([5, 1], vertical_alignment="center")
+    html(f"<div class='page-title'>{titulo}</div><div class='page-sub'>{sub}</div>", c1)
+    c2.download_button("Exportar Excel", data=excel_para(excel_de), icon=":material/download:",
+                       file_name=f"margenes_{excel_de.split()[0].lower()}.xlsx", width="stretch",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-def estilo(fig, alto: int = 420, leyenda: bool = True):
-    fig.update_layout(font=FUENTE, height=alto, legend_title_text="", showlegend=leyenda,
-                      margin=dict(l=10, r=10, t=100 if fig.layout.title.text else 40, b=10),
-                      title_font_size=19, title_y=0.98, title_yanchor="top",
-                      legend=dict(orientation="h", yanchor="bottom", y=1.01, x=0))
+def seccion(texto: str) -> None:
+    html(f"<div class='sec-label'>{texto}</div>")
+
+
+_n_card = iter(range(10_000))
+
+
+def card(titulo: str, icono: str, dest=None):
+    """Tarjeta blanca con encabezado (como las de Ant Design)."""
+    c = (dest or st).container(key=f"card_{next(_n_card)}")
+    html(f"<div class='card-head'>{ic(icono)} {titulo}</div>", c)
+    return c
+
+
+def stat(dest, titulo: str, valor: str, icono: str, color: str, barra: float,
+         nota: str = "", tendencia: float | None = None) -> None:
+    t = ""
+    if tendencia is not None and np.isfinite(tendencia):
+        sube = tendencia >= 0
+        t = (f"<span class='stat-trend' style='color:{VERDE if sube else ROJO}'>"
+             f"{ic('arrow_upward' if sube else 'arrow_downward')}{abs(tendencia):.0f}%</span>")
+    html(f"""<div class='stat'><div class='stat-title'>{titulo}</div>
+        <div class='stat-row'>{ic(icono, color)}<span class='stat-val'>{valor}</span>{t}</div>
+        <div class='stat-bar'><div style='width:{max(0, min(100, barra)):.0f}%;background:{color}'></div></div>
+        <div class='stat-note'>{nota}</div></div>""", dest)
+
+
+def anillo(dest, titulo: str, valor: str, pct: float, color: str, icono: str) -> None:
+    html(f"""<div class='stat ring-card'><div><div class='stat-title'>{titulo}</div>
+        <div class='stat-row'>{ic(icono, TEXTO, 22)}<span class='stat-val'>{valor}</span></div></div>
+        <div class='ring' style='background:conic-gradient({color} {pct:.1f}%, #f0f0f0 0)'>
+        <span>{pct:.0f}%</span></div></div>""", dest)
+
+
+def estilo(fig, alto: int = 380, leyenda: bool = True):
+    fig.update_layout(template="plotly_white", font=FUENTE, height=alto, showlegend=leyenda,
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", title=None,
+                      margin=dict(l=4, r=4, t=36 if leyenda else 10, b=4), legend_title_text="",
+                      legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0))
+    fig.update_xaxes(showgrid=False, linecolor="#f0f0f0", tickfont_color=TEXTO_2)
+    fig.update_yaxes(gridcolor="#f0f0f0", griddash="dash", zeroline=False, tickfont_color=TEXTO_2)
     return fig
 
 
-def mostrar(fig, col=None) -> None:
-    (col or st).plotly_chart(fig, width=ANCHO, config={"displayModeBar": False})
-
-
-def ver_tabla(df_: pd.DataFrame, titulo: str = "📋 Ver los números en tabla", **kw) -> None:
-    with st.expander(titulo):
-        st.dataframe(df_, width=ANCHO, hide_index=True, **kw)
+def mostrar(fig, dest=None) -> None:
+    (dest or st).plotly_chart(fig, width=ANCHO, config={"displayModeBar": False})
 
 
 def sube_baja(serie: pd.Series) -> pd.Series:
     return serie.map({"INCREMENTO": "Sube", "DECREMENTO": "Baja"}).fillna("Sin cambio")
-
-
-COLORES_REVISAR = {"🟢 Sin señales": VERDE, "🟡 Revisar": AMARILLO, "🔴 Revisar con prioridad": ROJO}
-COLORES_TIPO = {
-    "⬇️ Bajó el mínimo": "#1565c0",
-    "⬆️ Subió el máximo": "#c62828",
-    "↔️ Bajó mín. y subió máx.": "#8e24aa",
-    "🔸 Otros cambios": "#bdbdbd",
-}
-PALETA = ["#4c78a8", "#f58518", "#54a24b", "#e45756", "#72b7b2", "#eeca3b", "#b279a2", "#9d755d", "#bab0ac"]
 
 
 def tipo_de_cambio(df_: pd.DataFrame) -> pd.Series:
@@ -443,9 +535,9 @@ def top_n(serie: pd.Series, n: int = 6) -> pd.Series:
     return serie.where(serie.isin(serie.value_counts().index[:n]), "Otros")
 
 
-def pastel(serie: pd.Series, colores: dict | None, titulo: str, centro: str = "",
-           alto: int = 340, leyenda: bool = True, texto: str = "percent"):
-    """Un solo pastel (dona) con los conteos de la serie."""
+def pastel(serie: pd.Series, colores: dict | None = None, centro: str = "", alto: int = 320,
+           leyenda: bool = True, unidad: str = "cambios"):
+    """Gráfica de pastel (dona)."""
     vc = serie.value_counts()
     if colores:
         vc = vc.reindex([k for k in colores if k in vc.index] + [k for k in vc.index if k not in colores])
@@ -454,274 +546,342 @@ def pastel(serie: pd.Series, colores: dict | None, titulo: str, centro: str = ""
         if "Otros" in vc.index:
             vc = pd.concat([vc.drop("Otros"), vc[["Otros"]]])
         cols = [(GRIS if k == "Otros" else PALETA[i % len(PALETA)]) for i, k in enumerate(vc.index)]
-    fig = go.Figure(go.Pie(labels=vc.index, values=vc.values, hole=0.5, sort=False, marker_colors=cols,
-                           textinfo=texto, textfont_size=15, insidetextorientation="horizontal",
-                           textposition="inside",
-                           hovertemplate="<b>%{label}</b><br>%{value:,} cambios (%{percent})<extra></extra>"))
-    fig.update_layout(title=dict(text=titulo, x=0.5, xanchor="center", font_size=18), height=alto,
-                      font=FUENTE, showlegend=leyenda, margin=dict(l=10, r=10, t=50, b=10),
-                      uniformtext_minsize=11, uniformtext_mode="hide",
+    fig = go.Figure(go.Pie(
+        labels=vc.index, values=vc.values, hole=0.62, sort=False, textinfo="percent", textposition="inside",
+        marker=dict(colors=cols, line=dict(color="#ffffff", width=2)), textfont=dict(size=13, color="#fff"),
+        insidetextorientation="horizontal",
+        hovertemplate="<b>%{label}</b><br>%{value:,} " + unidad + " (%{percent})<extra></extra>"))
+    fig.update_layout(height=alto, font=FUENTE, showlegend=leyenda, paper_bgcolor="rgba(0,0,0,0)",
+                      margin=dict(l=4, r=4, t=8, b=4), uniformtext_minsize=11, uniformtext_mode="hide",
                       legend=dict(orientation="h", yanchor="top", y=-0.02, x=0.5, xanchor="center"))
     if centro:
-        fig.add_annotation(text=centro, showarrow=False, font_size=16)
+        fig.add_annotation(text=centro, showarrow=False, font=dict(size=15, color=TEXTO))
     return fig
 
 
-# ================================================================ app
-if not check_password():
-    st.stop()
+def card_pastel(dest, titulo: str, icono: str, serie: pd.Series, colores: dict | None = None,
+                centro: str = "", alto: int = 320, unidad: str = "cambios") -> None:
+    mostrar(pastel(serie, colores, centro, alto, unidad=unidad), card(titulo, icono, dest))
 
-df_all = cargar()
 
-st.markdown(
-    "<h1 style='margin-bottom:0'>📊 Cambios de márgenes autorizados</h1>"
-    f"<p style='font-size:1.15rem;color:#607d8b;margin-top:4px'>{mes_largo(df_all['Mes'].min())} a "
-    f"{mes_largo(df_all['Mes'].max())}</p>",
-    unsafe_allow_html=True,
-)
+def preparar(df_: pd.DataFrame) -> pd.DataFrame:
+    d_ = marcar(df_, U).copy()
+    d_["Mes (texto)"] = d_["Mes"].map(mes_corto)
+    d_["Mínimo"] = sube_baja(d_["DETERMINACION_MIN"])
+    d_["Máximo"] = sube_baja(d_["DETERMINACION_MAX"])
+    d_["Tipo de cambio"] = tipo_de_cambio(d_)
+    d_["Inventario (corto)"] = d_["DESCRIPCIÓN DEL INVENTARIO"].map(inventario_corto)
+    d_["Revisar"] = np.select([d_["Núm. alertas"] >= 3, d_["Núm. alertas"] >= 1],
+                              ["Revisar con prioridad", "Revisar"], "Sin señales")
+    return d_
 
-# Umbrales fijos de las señales (antes se podían cambiar en la barra lateral)
-u = {"u_dmax": 40.0, "u_rmax": 100, "u_maxalto": 100.0, "u_dmin": 10.0, "u_expres": 2.0,
-     "u_tarde": 72, "u_hini": 8, "u_hfin": 19, "u_dias": 30, "u_lote": 5}
 
-d = marcar(df_all, u).copy()
-if d.empty:
-    st.warning("No hay movimientos en el archivo.")
-    st.stop()
+# ================================================================ secciones reutilizables
+def bloque_resumen(x: pd.DataFrame, total_general: int) -> None:
+    n, n_sol = len(x), x["Solicitud"].nunique()
+    con = int((x["Núm. alertas"] > 0).sum())
+    prio = int((x["Núm. alertas"] >= 3).sum())
+    pm = x.groupby("Mes").size().sort_index()
+    tend = 100 * (pm.iloc[-1] - pm.iloc[-2]) / pm.iloc[-2] if len(pm) > 1 and pm.iloc[-2] else None
 
-d["Mes (texto)"] = d["Mes"].map(mes_corto)
-ORDEN_MESES = [mes_corto(x) for x in sorted(d["Mes"].unique())]
-d["Mínimo"] = sube_baja(d["DETERMINACION_MIN"])
-d["Máximo"] = sube_baja(d["DETERMINACION_MAX"])
-d["Tipo de cambio"] = tipo_de_cambio(d)
-d["Inventario (corto)"] = d["DESCRIPCIÓN DEL INVENTARIO"].map(inventario_corto)
-d["Revisar"] = np.select([d["Núm. alertas"] >= 3, d["Núm. alertas"] >= 1],
-                         ["🔴 Revisar con prioridad", "🟡 Revisar"], "🟢 Sin señales")
-d["Señal principal"] = d[list(ALERTAS)].apply(
-    lambda r: next((f"{ICONOS[f]} {EXPLICA[f]}" for f in ALERTAS if r[f]), ""), axis=1)
-
-tabs = st.tabs(["🏠 Resumen", "📅 Mes a mes", "🚩 Qué revisar", "🔍 Casos a revisar"])
-
-# ================================================================ Resumen
-with tabs[0]:
-    n_mov, n_sol = len(d), d["Solicitud"].nunique()
-    con = int((d["Núm. alertas"] > 0).sum())
-    prio = int((d["Núm. alertas"] >= 3).sum())
-    pct_con = 100 * con / n_mov
-
-    st.markdown(
-        f"<p style='font-size:1.3rem'>De <b>{mes_largo(d['Mes'].min())}</b> a <b>{mes_largo(d['Mes'].max())}</b> "
-        f"se autorizaron <b>{n_mov:,} cambios de margen</b> en <b>{n_sol:,} solicitudes</b>.</p>",
-        unsafe_allow_html=True,
-    )
+    seccion("Resumen")
     c = st.columns(4)
-    tarjeta(c[0], "Cambios autorizados", f"{n_mov:,}", "productos con margen modificado", "#37474f", "📦")
-    tarjeta(c[1], "Solicitudes", f"{n_sol:,}", "folios distintos", "#455a64", "📝")
-    tarjeta(c[2], "Con alguna señal", f"{pct_con:.0f}%", f"{con:,} cambios para revisar",
-            color_semaforo(pct_con), "🚩")
-    tarjeta(c[3], "Prioridad alta", f"{prio:,}", "cambios con 3 o más señales",
-            ROJO if prio else VERDE, "🔴")
-    st.write("")
+    stat(c[0], "Cambios autorizados", f"{n:,}", "swap_vert", AZUL, 100 * n / total_general,
+         f"{100 * n / total_general:.0f}% del total · flecha: último mes", tend)
+    stat(c[1], "Solicitudes", f"{n_sol:,}", "description", VERDE, 100 * n_sol / max(n, 1),
+         f"{n / max(n_sol, 1):.1f} productos por solicitud")
+    stat(c[2], "Con alguna señal", f"{100 * con / n:.0f}%", "flag", color_semaforo(100 * con / n),
+         100 * con / n, f"{con:,} cambios para revisar")
+    stat(c[3], "Prioridad alta", f"{prio:,}", "error", ROJO, 100 * prio / n, "cambios con 3 o más señales")
 
-    c = st.columns(2)
-    mostrar(pastel(d["Tipo de cambio"], COLORES_TIPO, "🔄 ¿Qué tipo de cambios se hicieron?",
-                   f"<b>{n_mov:,}</b><br>cambios", alto=420), c[0])
-    mostrar(pastel(d["Revisar"], COLORES_REVISAR, "🚦 Semáforo de todos los cambios",
-                   f"<b>{n_mov:,}</b><br>cambios", alto=420), c[1])
-    st.caption("⬇️ Bajar el mínimo = se permite vender más barato · ⬆️ Subir el máximo = se permite vender más caro · "
-               "🟢 sin señales · 🟡 1 o 2 señales · 🔴 3 o más señales")
-
+    seccion("Tipo de movimiento")
     c = st.columns(3)
-    mostrar(pastel(d["Mínimo"], COLORES_SUBE_BAJA, "⬇️ Margen mínimo", alto=360), c[0])
-    mostrar(pastel(d["Máximo"], COLORES_SUBE_BAJA, "⬆️ Margen máximo", alto=360), c[1])
-    mostrar(pastel(d["Inventario (corto)"], None, "📦 ¿De qué inventario?", alto=360), c[2])
+    for col, (tipo, icono) in zip(c, [("Bajó el mínimo", "south"), ("Subió el máximo", "north"),
+                                      ("Bajó mín. y subió máx.", "unfold_more")]):
+        k = int((x["Tipo de cambio"] == tipo).sum())
+        anillo(col, tipo, f"{k:,} cambios", 100 * k / n, COLORES_TIPO[tipo], icono)
 
-    pm = d.groupby(["Mes", "Mes (texto)"]).size().reset_index(name="Cambios").sort_values("Mes")
-    fig = px.bar(pm, x="Mes (texto)", y="Cambios", text="Cambios", title="📅 Cambios autorizados por mes",
-                 category_orders={"Mes (texto)": ORDEN_MESES})
-    fig.update_traces(marker_color="#4c78a8", textposition="outside", textfont_size=16, cliponaxis=False)
+
+def mosaico_meses(x: pd.DataFrame, por_fila: int = 4) -> None:
+    meses_x = sorted(x["Mes"].unique())
+    leyenda = "&nbsp;&nbsp;&nbsp;".join(
+        f"<span style='display:inline-flex;align-items:center;gap:6px'><span style='width:10px;height:10px;"
+        f"border-radius:50%;background:{c_}'></span>{t}</span>" for t, c_ in COLORES_TIPO.items())
+    html(f"<div style='font-size:13px;color:{TEXTO_2};margin-bottom:8px'>{leyenda}</div>")
+    for i in range(0, len(meses_x), por_fila):
+        cols = st.columns(por_fila)
+        for col, mes in zip(cols, meses_x[i:i + por_fila]):
+            xm = x[x["Mes"] == mes]
+            cont = card(mes_largo(mes), "calendar_month", col)
+            mostrar(pastel(xm["Tipo de cambio"], COLORES_TIPO, f"<b>{len(xm):,}</b><br>cambios", 230,
+                           leyenda=False), cont)
+            dom = xm["Tipo de cambio"].value_counts()
+            html(f"<p class='mes-nota'>Lo más común<br><b>{dom.index[0]}</b> "
+                 f"({100 * dom.iloc[0] / len(xm):.0f}%)</p>", cont)
+
+
+def barras_mes(x: pd.DataFrame, por_persona: bool) -> None:
+    orden = [mes_corto(m) for m in sorted(x["Mes"].unique())]
+    if por_persona:
+        pm = x.groupby(["Mes", "Mes (texto)", "Autorizó"]).size().reset_index(name="Cambios").sort_values("Mes")
+        fig = px.bar(pm, x="Mes (texto)", y="Cambios", color="Autorizó", text="Cambios",
+                     color_discrete_map=COLORES_AUT, category_orders={"Mes (texto)": orden})
+    else:
+        pm = x.groupby(["Mes", "Mes (texto)"]).size().reset_index(name="Cambios").sort_values("Mes")
+        fig = px.bar(pm, x="Mes (texto)", y="Cambios", text="Cambios", category_orders={"Mes (texto)": orden})
+        fig.update_traces(marker_color=AZUL)
+    fig.update_traces(textposition="inside", textfont_size=13, marker_cornerradius=4)
     fig.update_xaxes(title="")
-    fig.update_yaxes(title="", showticklabels=False, showgrid=False)
-    mostrar(estilo(fig, 400, leyenda=False))
+    fig.update_yaxes(title="")
+    mostrar(estilo(fig, 340, leyenda=por_persona), card("Cambios autorizados por mes", "bar_chart"))
 
-    st.subheader("🗺️ ¿Dónde se hacen más cambios?")
-    st.caption("Cada cuadro es una región y, adentro, sus unidades operativas. Más grande = más cambios. "
-               "Más rojo = más señales para revisar.")
-    tm = (d.groupby(["NOMBRE DE SUCURSAL", "NOMBRE DE UNIDAD OP."])
+
+def mapa_regiones(x: pd.DataFrame) -> None:
+    tm = (x.groupby(["NOMBRE DE SUCURSAL", "NOMBRE DE UNIDAD OP."])
           .agg(Cambios=("Solicitud", "size"), Señales=("Núm. alertas", lambda s: round(100 * (s > 0).mean(), 0)))
           .reset_index())
     fig = px.treemap(tm, path=[px.Constant("Todas"), "NOMBRE DE SUCURSAL", "NOMBRE DE UNIDAD OP."],
-                     values="Cambios", color="Señales", range_color=[0, 50],
-                     color_continuous_scale=[[0, "#c8e6c9"], [0.5, "#fff3c4"], [1, "#e57373"]])
-    fig.update_traces(texttemplate="<b>%{label}</b><br>%{value} cambios", textfont_size=15)
-    fig.update_layout(coloraxis_colorbar=dict(title="% con señal", ticksuffix="%"))
-    mostrar(estilo(fig, 520))
+                     values="Cambios", color="Señales", range_color=[0, 60],
+                     color_continuous_scale=[[0, "#d9f7be"], [0.5, "#fff1b8"], [1, "#ffa39e"]])
+    fig.update_traces(texttemplate="<b>%{label}</b><br>%{value} cambios", textfont_size=13,
+                      marker_line_color="#ffffff", marker_line_width=2)
+    fig.update_layout(coloraxis_colorbar=dict(title="% con señal", ticksuffix="%", thickness=12))
+    cont = card("¿Dónde se hacen más cambios?", "map")
+    html(f"<p style='font-size:13px;color:{TEXTO_2};margin:4px 0'>Cada cuadro es una región y, adentro, sus "
+         "unidades operativas. Más grande = más cambios. Más rojo = más señales para revisar.</p>", cont)
+    mostrar(estilo(fig, 480, leyenda=False), cont)
 
-# ================================================================ Mes a mes
-with tabs[1]:
-    st.markdown("<p style='font-size:1.15rem'>Cada pastel es un mes. Los colores muestran <b>qué tipo de "
-                "cambio</b> se hizo más.</p>", unsafe_allow_html=True)
-    leyenda = " &nbsp; ".join(f"<span style='color:{c};font-size:1.4rem'>●</span> {t}"
-                              for t, c in COLORES_TIPO.items())
-    st.markdown(f"<p style='font-size:1rem'>{leyenda}</p>", unsafe_allow_html=True)
 
-    # ---- mosaico: un pastel por mes
-    meses_d = sorted(d["Mes"].unique())
-    por_fila = 4
-    for i in range(0, len(meses_d), por_fila):
-        cols = st.columns(por_fila)
-        for col, mes in zip(cols, meses_d[i:i + por_fila]):
-            x = d[d["Mes"] == mes]
-            fig = pastel(x["Tipo de cambio"], COLORES_TIPO, f"<b>{mes_largo(mes)}</b>",
-                         f"<b>{len(x):,}</b><br>cambios", alto=260, leyenda=False, texto="percent")
-            mostrar(fig, col)
-            dom = x["Tipo de cambio"].value_counts()
-            col.markdown(f"<p style='text-align:center;margin-top:-18px;font-size:.95rem'>"
-                         f"Lo más común:<br><b>{dom.index[0]}</b> ({100 * dom.iloc[0] / len(x):.0f}%)</p>",
-                         unsafe_allow_html=True)
+# ================================================================ páginas
+def pagina_general() -> None:
+    x = D
+    encabezado("Resumen general",
+               f"Daniel Montesinos y Beatriz Cervantes juntos · {mes_largo(x['Mes'].min())} a "
+               f"{mes_largo(x['Mes'].max())}", "General")
+    bloque_resumen(x, len(D))
+    c = st.columns(3)
+    card_pastel(c[0], "Tipo de cambio", "swap_vert", x["Tipo de cambio"], COLORES_TIPO, f"<b>{len(x):,}</b><br>cambios")
+    card_pastel(c[1], "Semáforo", "traffic", x["Revisar"], COLORES_REVISAR, f"<b>{len(x):,}</b><br>cambios")
+    card_pastel(c[2], "¿Quién autorizó?", "group", x["Autorizó"], COLORES_AUT, f"<b>{len(x):,}</b><br>cambios")
+    c = st.columns(3)
+    card_pastel(c[0], "Margen mínimo", "south", x["Mínimo"], COLORES_SUBE_BAJA)
+    card_pastel(c[1], "Margen máximo", "north", x["Máximo"], COLORES_SUBE_BAJA)
+    card_pastel(c[2], "Inventario", "inventory_2", x["Inventario (corto)"])
+    seccion("Por mes")
+    barras_mes(x, por_persona=True)
+    seccion("Por región")
+    mapa_regiones(x)
 
-    st.divider()
 
-    # ---- detalle de un mes
-    st.subheader("🔎 Ver un mes a detalle")
+def pagina_persona(nombre: str) -> None:
+    x = D[D["Autorizó"] == nombre]
+    if x.empty:
+        st.info(f"No hay cambios autorizados por {nombre}.")
+        return
+    encabezado(nombre, f"Cambios que autorizó · {mes_largo(x['Mes'].min())} a {mes_largo(x['Mes'].max())}",
+               nombre)
+    bloque_resumen(x, len(D))
+    c = st.columns(3)
+    card_pastel(c[0], "Tipo de cambio", "swap_vert", x["Tipo de cambio"], COLORES_TIPO, f"<b>{len(x):,}</b><br>cambios")
+    card_pastel(c[1], "Semáforo", "traffic", x["Revisar"], COLORES_REVISAR, f"<b>{len(x):,}</b><br>cambios")
+    card_pastel(c[2], "Inventario", "inventory_2", x["Inventario (corto)"])
+    c = st.columns(3)
+    card_pastel(c[0], "Margen mínimo", "south", x["Mínimo"], COLORES_SUBE_BAJA)
+    card_pastel(c[1], "Margen máximo", "north", x["Máximo"], COLORES_SUBE_BAJA)
+    card_pastel(c[2], "¿Quién le pide los cambios?", "person_raised_hand", top_n(x["Solicitó"], 5))
+    seccion("Mes a mes")
+    barras_mes(x, por_persona=False)
+    mosaico_meses(x)
+    seccion("Por región")
+    mapa_regiones(x)
+
+
+def pagina_mes() -> None:
+    x = D
+    encabezado("Mes a mes", "Qué tipo de cambios se hicieron en cada mes (las dos personas juntas)", "General")
+    seccion("Cada mes")
+    mosaico_meses(x)
+
+    seccion("Un mes a detalle")
+    meses_d = sorted(x["Mes"].unique())
     mes_sel = st.selectbox("Elige el mes", meses_d[::-1], format_func=mes_largo, key="mes_sel")
-    x = d[d["Mes"] == mes_sel]
+    xm = x[x["Mes"] == mes_sel]
     idx = meses_d.index(mes_sel)
-    prev = d[d["Mes"] == meses_d[idx - 1]] if idx > 0 else None
+    prev = x[x["Mes"] == meses_d[idx - 1]] if idx > 0 else None
 
-    # resumen escrito automático
-    tipo = x["Tipo de cambio"].value_counts()
-    inv = x["Inventario (corto)"].value_counts()
-    reg = x["NOMBRE DE SUCURSAL"].value_counts()
-    prod = x["DESCRIPCION DEL PRODUCTO"].value_counts()
-    pct_sen = 100 * (x["Núm. alertas"] > 0).mean()
-    señales = pd.Series({f: int(x[f].sum()) for f in ALERTAS}).sort_values(ascending=False)
-    quien = x["Autorizó"].value_counts()
-    puntos = [
-        f"Se autorizaron <b>{len(x):,} cambios</b> en <b>{x['Solicitud'].nunique():,} solicitudes</b>"
-        + (f" ({'▲' if len(x) > len(prev) else '▼'} {abs(len(x) - len(prev)):,} respecto a "
-           f"{mes_largo(meses_d[idx - 1]).split()[0].lower()})" if prev is not None else "") + ".",
-        f"Autorizó: <b>{', '.join(f'{a} ({n:,})' for a, n in quien.items())}</b>.",
-        f"Lo que más se hizo: <b>{tipo.index[0]}</b> ({100 * tipo.iloc[0] / len(x):.0f}% de los cambios).",
-        f"Inventario principal: <b>{inv.index[0]}</b> ({100 * inv.iloc[0] / len(x):.0f}%).",
-        f"Región con más cambios: <b>{reg.index[0].title()}</b> ({reg.iloc[0]:,}).",
-        f"Productos más movidos: <b>{', '.join(p.title() for p in prod.index[:3])}</b>.",
-        f"<b>{pct_sen:.0f}%</b> de los cambios tienen alguna señal"
-        + (f"; la más común: <b>{ICONOS[señales.index[0]]} {EXPLICA[señales.index[0]].lower()}</b> "
-           f"({señales.iloc[0]:,})." if señales.iloc[0] > 0 else "."),
+    tipo = xm["Tipo de cambio"].value_counts()
+    inv = xm["Inventario (corto)"].value_counts()
+    reg = xm["NOMBRE DE SUCURSAL"].value_counts()
+    prod = xm["DESCRIPCION DEL PRODUCTO"].value_counts()
+    pct_sen = 100 * (xm["Núm. alertas"] > 0).mean()
+    señales = pd.Series({f: int(xm[f].sum()) for f in ALERTAS}).sort_values(ascending=False)
+    quien = xm["Autorizó"].value_counts()
+    var = ""
+    if prev is not None:
+        dif = len(xm) - len(prev)
+        var = (f" · {ic('arrow_upward' if dif >= 0 else 'arrow_downward', VERDE if dif >= 0 else ROJO, 15)}"
+               f"{abs(dif):,} respecto a {mes_largo(meses_d[idx - 1]).split()[0].lower()}")
+    items = [
+        ("swap_vert", f"<b>{len(xm):,} cambios</b> en <b>{xm['Solicitud'].nunique():,} solicitudes</b>", var),
+        ("group", "Autorizó: <b>" + ", ".join(f"{a} ({k:,})" for a, k in quien.items()) + "</b>", ""),
+        ("category", f"Lo que más se hizo: <b>{tipo.index[0]}</b>",
+         f"{100 * tipo.iloc[0] / len(xm):.0f}% de los cambios"),
+        ("inventory_2", f"Inventario principal: <b>{inv.index[0]}</b>", f"{100 * inv.iloc[0] / len(xm):.0f}%"),
+        ("map", f"Región con más cambios: <b>{reg.index[0].title()}</b>", f"{reg.iloc[0]:,} cambios"),
+        ("shopping_cart", "Productos más movidos: <b>" + ", ".join(p.title() for p in prod.index[:3]) + "</b>", ""),
+        ("flag", f"<b>{pct_sen:.0f}%</b> de los cambios tienen alguna señal",
+         (f"La más común: {EXPLICA[señales.index[0]].lower()} ({señales.iloc[0]:,})"
+          if señales.iloc[0] > 0 else "")),
     ]
-    color_caja = color_semaforo(pct_sen)
-    st.markdown(
-        f"<div style='border-left:8px solid {color_caja};background:rgba(127,127,127,.08);border-radius:10px;"
-        f"padding:14px 20px;font-size:1.1rem;line-height:1.8'>"
-        f"<b style='font-size:1.3rem'>📌 {mes_largo(mes_sel)} en resumen</b><br>"
-        + "<br>".join(f"• {p}" for p in puntos) + "</div>",
-        unsafe_allow_html=True,
-    )
-    st.write("")
-
+    c1, c2 = st.columns([2, 3])
+    cont = card(f"{mes_largo(mes_sel)} en resumen", "summarize", c1)
+    html("<ul class='lista'>" + "".join(
+        f"<li><span class='dot'>{ic(i)}</span><div>{t}<small>{s}</small></div></li>" for i, t, s in items)
+         + "</ul>", cont)
+    with c2:
+        c = st.columns(2)
+        card_pastel(c[0], "Tipo de cambio", "swap_vert", xm["Tipo de cambio"], COLORES_TIPO, alto=300)
+        card_pastel(c[1], "Semáforo", "traffic", xm["Revisar"], COLORES_REVISAR, alto=300)
     c = st.columns(3)
-    mostrar(pastel(x["Tipo de cambio"], COLORES_TIPO, "🔄 Tipo de cambio"), c[0])
-    mostrar(pastel(x["Autorizó"], COLORES_AUT, "👤 ¿Quién autorizó?"), c[1])
-    mostrar(pastel(x["Revisar"], COLORES_REVISAR, "🚦 Semáforo"), c[2])
+    card_pastel(c[0], "¿Quién autorizó?", "group", xm["Autorizó"], COLORES_AUT)
+    card_pastel(c[1], "Margen mínimo", "south", xm["Mínimo"], COLORES_SUBE_BAJA)
+    card_pastel(c[2], "Margen máximo", "north", xm["Máximo"], COLORES_SUBE_BAJA)
     c = st.columns(3)
-    mostrar(pastel(x["Mínimo"], COLORES_SUBE_BAJA, "⬇️ Margen mínimo"), c[0])
-    mostrar(pastel(x["Máximo"], COLORES_SUBE_BAJA, "⬆️ Margen máximo"), c[1])
-    mostrar(pastel(x["Inventario (corto)"], None, "📦 Inventario"), c[2])
-    c = st.columns(2)
-    mostrar(pastel(top_n(x["NOMBRE DE SUCURSAL"].str.title(), 6), None, "🗺️ Región"), c[0])
-    mostrar(pastel(top_n(x["DESCRIPCION DEL PRODUCTO"].str.title(), 6), None, "🛒 Productos más movidos"), c[1])
+    card_pastel(c[0], "Inventario", "inventory_2", xm["Inventario (corto)"])
+    card_pastel(c[1], "Región", "map", top_n(xm["NOMBRE DE SUCURSAL"].str.title(), 5))
+    card_pastel(c[2], "Productos más movidos", "shopping_cart", top_n(xm["DESCRIPCION DEL PRODUCTO"].str.title(), 5))
 
-    ver_tabla(x[[c for c in DETALLE_COLS if c in x.columns]].rename(columns=DETALLE_COLS),
-              f"📋 Ver los {len(x):,} cambios de {mes_largo(mes_sel)}")
-
-    st.divider()
-    st.subheader("📅 Todos los meses en una tabla")
-    tabla_mes = (d.groupby("Mes")
+    seccion("Todos los meses")
+    tabla_mes = (x.groupby("Mes")
                  .agg(**{"Cambios": ("Solicitud", "size"), "Solicitudes": ("Solicitud", "nunique"),
                          "Tipo más común": ("Tipo de cambio", lambda s: s.value_counts().index[0]),
                          "Inventario principal": ("Inventario (corto)", lambda s: s.value_counts().index[0]),
                          "% con señal": ("Núm. alertas", lambda s: round(100 * (s > 0).mean()))})
                  .reset_index())
     tabla_mes["Mes"] = tabla_mes["Mes"].map(mes_largo)
-    st.dataframe(tabla_mes, width=ANCHO, hide_index=True, height=38 * (len(tabla_mes) + 1) + 4,
-                 column_config={"% con señal": st.column_config.ProgressColumn(
-                     "% con señal", min_value=0, max_value=100, format="%d%%")})
+    card("Resumen por mes", "table_chart").dataframe(
+        tabla_mes, width=ANCHO, hide_index=True, height=38 * (len(tabla_mes) + 1) + 4,
+        column_config={"% con señal": st.column_config.ProgressColumn(
+            "% con señal", min_value=0, max_value=100, format="%d%%")})
 
-# ================================================================ Qué revisar
-with tabs[2]:
-    st.warning(
-        "Estas señales **no prueban una mala práctica**: indican cambios que vale la pena preguntar. "
-        "Muchos tienen una explicación válida (temporada, ofertas, costos de la región)."
-    )
-    sen = d.melt(value_vars=list(ALERTAS), var_name="Alerta", value_name="Sí")
+
+def pagina_revisar() -> None:
+    x = D
+    encabezado("Qué revisar", "Señales encontradas en los cambios (las dos personas juntas)", "General")
+    html(f"<div class='aviso'>{ic('info')}<div>Estas señales <b>no prueban una mala práctica</b>: indican "
+         "cambios que vale la pena preguntar. Muchos tienen una explicación válida (temporada, ofertas, "
+         "costos de la región).</div></div>")
+    seccion("Señales")
+    sen = x.melt(value_vars=list(ALERTAS), var_name="Alerta", value_name="Sí")
     sen = sen[sen["Sí"]]
+    c = st.columns([3, 2])
     if sen.empty:
-        st.success("✅ No hay señales para revisar.")
+        st.success("No hay señales para revisar.")
     else:
-        sen["Señal"] = sen["Alerta"].map(lambda f: f"{ICONOS[f]} {EXPLICA[f]}")
-        c = st.columns([3, 2])
-        mostrar(pastel(top_n(sen["Señal"], 7), None, "🚩 ¿Qué señales aparecen más?",
-                       f"<b>{len(sen):,}</b><br>señales", alto=480), c[0])
-        with c[1]:
-            st.write("")
-            st.markdown("**¿Qué significa cada señal?**")
-            for f, txt in ALERTAS.items():
-                st.markdown(f"{ICONOS[f]} **{EXPLICA[f]}**  \n<span style='color:gray;font-size:.9rem'>"
-                            f"{txt.format(**u)}</span>", unsafe_allow_html=True)
+        card_pastel(c[0], "¿Qué señales aparecen más?", "flag", top_n(sen["Alerta"].map(EXPLICA), 7),
+                    centro=f"<b>{len(sen):,}</b><br>señales", alto=460, unidad="señales")
+    cont = card("¿Qué significa cada señal?", "help", c[1])
+    html("<ul class='lista'>" + "".join(
+        f"<li><span class='dot'>{ic(ICONOS[f])}</span><div>{EXPLICA[f]}<small>{t.format(**U)}</small></div></li>"
+        for f, t in ALERTAS.items()) + "</ul>", cont)
 
+    seccion("Tiempos y horarios")
     c = st.columns(2)
-    sol = d.groupby("Solicitud")["Minutos para autorizar"].first().reset_index(name="Minutos")
-    orden_t = ["⚡ Menos de 2 min", "⏱️ Menos de 1 hora", "📆 El mismo día", "🗓️ 1 a 3 días", "🐢 Más de 3 días"]
+    sol = x.groupby("Solicitud")["Minutos para autorizar"].first().reset_index(name="Minutos")
+    orden_t = ["Menos de 2 min", "Menos de 1 hora", "El mismo día", "1 a 3 días", "Más de 3 días"]
     sol["Tiempo"] = pd.cut(sol["Minutos"], [-1, 2, 60, 1440, 4320, 1e9], labels=orden_t).astype(str)
-    colores_t = dict(zip(orden_t, ["#c62828", "#66bb6a", "#2e7d32", "#f9a825", "#8d6e63"]))
-    mostrar(pastel(sol["Tiempo"], colores_t, "⏳ ¿Cuánto se tarda en autorizar?",
-                   f"<b>{len(sol):,}</b><br>solicitudes", alto=420), c[0])
-    horario = np.where(d["Fuera de horario"], "🌙 Noche o fin de semana", "☀️ Horario normal")
-    mostrar(pastel(pd.Series(horario), {"☀️ Horario normal": "#fbc02d", "🌙 Noche o fin de semana": "#283593"},
-                   "🕒 ¿Cuándo se autoriza?", alto=420), c[1])
-    st.caption(f"Horario normal = lunes a viernes de {u['u_hini']} a {u['u_hfin']} h.")
+    card_pastel(c[0], "¿Cuánto se tarda en autorizar?", "schedule", sol["Tiempo"],
+                dict(zip(orden_t, [ROJO, "#95de64", VERDE, AMARILLO, NARANJA])),
+                f"<b>{len(sol):,}</b><br>solicitudes", alto=380, unidad="solicitudes")
+    horario = pd.Series(np.where(x["Fuera de horario"], "Noche o fin de semana", "Horario normal"))
+    card_pastel(c[1], f"¿Cuándo se autoriza? (normal: L-V {U['u_hini']} a {U['u_hfin']} h)", "dark_mode",
+                horario, {"Horario normal": CIAN, "Noche o fin de semana": "#1d39c4"}, alto=380)
 
-    st.subheader("📈 Margen máximo: antes y después")
-    st.caption("Cada punto es un cambio. Los que quedan **muy arriba de la línea gris** son subidas grandes.")
-    fig = px.scatter(d, x="SCMARMAXACT", y="SCMARMAXSOL", color="Revisar", color_discrete_map=COLORES_REVISAR,
-                     opacity=0.75, category_orders={"Revisar": list(COLORES_REVISAR)},
+    seccion("Margen máximo: antes y después")
+    fig = px.scatter(x, x="SCMARMAXACT", y="SCMARMAXSOL", color="Revisar", color_discrete_map=COLORES_REVISAR,
+                     opacity=0.8, category_orders={"Revisar": list(COLORES_REVISAR)},
                      hover_data={"DESCRIPCION DEL PRODUCTO": True, "NOMBRE DE SUCURSAL": True, "Mes": True,
                                  "Alertas": True, "Revisar": False})
-    lim = float(max(d["SCMARMAXACT"].max(), d["SCMARMAXSOL"].max()))
-    fig.add_trace(go.Scatter(x=[0, lim], y=[0, lim], mode="lines", line=dict(dash="dot", color="gray"),
+    lim = float(max(x["SCMARMAXACT"].max(), x["SCMARMAXSOL"].max()))
+    fig.add_trace(go.Scatter(x=[0, lim], y=[0, lim], mode="lines", line=dict(dash="dot", color="#bfbfbf"),
                              name="Sin cambio"))
     fig.update_traces(marker_size=9, selector=dict(mode="markers"))
     fig.update_layout(xaxis_title="Máximo antes", yaxis_title="Máximo después")
-    mostrar(estilo(fig, 480))
+    cont = card("Cada punto es un cambio: los que quedan muy arriba de la línea gris son subidas grandes",
+                "scatter_plot")
+    mostrar(estilo(fig, 460), cont)
 
-# ================================================================ Casos a revisar
-with tabs[3]:
-    r = d[d["Núm. alertas"] >= 3].sort_values(["Núm. alertas", "Cambio máx."], ascending=False)
-    st.markdown(f"<p style='font-size:1.3rem'>🔴 <b>{len(r):,} cambios</b> en <b>{r['Solicitud'].nunique():,} "
-                "solicitudes</b> tienen 3 o más señales. Son los primeros que conviene revisar.</p>",
-                unsafe_allow_html=True)
-    if not r.empty:
-        c = st.columns(2)
-        mostrar(pastel(top_n(r["NOMBRE DE SUCURSAL"].str.title(), 6), None, "🗺️ ¿De qué región son?",
-                       alto=380), c[0])
-        mostrar(pastel(r["Tipo de cambio"], COLORES_TIPO, "🔄 ¿Qué tipo de cambio son?", alto=380), c[1])
-        cols = ["Núm. alertas", "Alertas", "Mes (texto)", "NOMBRE DE SUCURSAL", "NOMBRE DE UNIDAD OP.", "SCFOLIO",
-                "DESCRIPCION DEL PRODUCTO", "SCMARMINACT", "SCMARMINSOL", "SCMARMAXACT", "SCMARMAXSOL"]
-        st.dataframe(
-            r[cols], width=ANCHO, hide_index=True,
-            column_config={
-                "Núm. alertas": st.column_config.ProgressColumn("Señales", min_value=0, max_value=6, format="%d"),
-                "Alertas": "¿Por qué?", "Mes (texto)": "Mes", "NOMBRE DE SUCURSAL": "Región",
-                "NOMBRE DE UNIDAD OP.": "Unidad", "SCFOLIO": "Folio", "DESCRIPCION DEL PRODUCTO": "Producto",
-                "SCMARMINACT": "Mín. antes", "SCMARMINSOL": "Mín. después",
-                "SCMARMAXACT": "Máx. antes", "SCMARMAXSOL": "Máx. después",
-            },
-        )
 
-st.download_button(
-    "⬇️ Descargar Excel con toda la información",
-    data=a_excel(d),
-    file_name="movimientos_margenes.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-)
+def pagina_casos() -> None:
+    x = D
+    r = x[x["Núm. alertas"] >= 3].sort_values(["Núm. alertas", "Cambio máx."], ascending=False)
+    encabezado("Casos a revisar", "Cambios con 3 o más señales: los primeros que conviene revisar", "General")
+    seccion("Resumen")
+    c = st.columns(3)
+    stat(c[0], "Cambios con prioridad", f"{len(r):,}", "error", ROJO, 100 * len(r) / len(x),
+         f"{100 * len(r) / len(x):.1f}% de todos los cambios")
+    stat(c[1], "Solicitudes", f"{r['Solicitud'].nunique():,}", "description", AMARILLO,
+         100 * r["Solicitud"].nunique() / x["Solicitud"].nunique(), "folios con al menos un caso")
+    stat(c[2], "Productos distintos", f"{r['CVE. DE PRODUCTO'].nunique():,}", "shopping_cart", MORADO,
+         100 * r["CVE. DE PRODUCTO"].nunique() / x["CVE. DE PRODUCTO"].nunique(), "")
+    if r.empty:
+        return
+    st.write("")
+    c = st.columns(3)
+    card_pastel(c[0], "¿Quién los autorizó?", "group", r["Autorizó"], COLORES_AUT)
+    card_pastel(c[1], "¿De qué región son?", "map", top_n(r["NOMBRE DE SUCURSAL"].str.title(), 5))
+    card_pastel(c[2], "¿Qué tipo de cambio son?", "swap_vert", r["Tipo de cambio"], COLORES_TIPO)
+    seccion("Lista de casos")
+    cols = ["Núm. alertas", "Alertas", "Autorizó", "Mes (texto)", "NOMBRE DE SUCURSAL", "NOMBRE DE UNIDAD OP.",
+            "SCFOLIO", "DESCRIPCION DEL PRODUCTO", "SCMARMINACT", "SCMARMINSOL", "SCMARMAXACT", "SCMARMAXSOL"]
+    card(f"{len(r):,} casos", "fact_check").dataframe(
+        r[cols], width=ANCHO, hide_index=True,
+        column_config={
+            "Núm. alertas": st.column_config.ProgressColumn("Señales", min_value=0, max_value=6, format="%d"),
+            "Alertas": "¿Por qué?", "Mes (texto)": "Mes", "NOMBRE DE SUCURSAL": "Región",
+            "NOMBRE DE UNIDAD OP.": "Unidad", "SCFOLIO": "Folio", "DESCRIPCION DEL PRODUCTO": "Producto",
+            "SCMARMINACT": "Mín. antes", "SCMARMINSOL": "Mín. después",
+            "SCMARMAXACT": "Máx. antes", "SCMARMAXSOL": "Máx. después",
+        },
+    )
+
+
+@st.cache_data(ttl=3600, show_spinner="Preparando Excel…")
+def excel_para(quien: str) -> bytes:
+    return a_excel(D if quien == "General" else D[D["Autorizó"] == quien])
+
+
+# ================================================================ app
+html(CSS)
+try:
+    st.logo("logo.svg", size="large")
+except Exception:  # noqa: BLE001
+    pass
+
+if not check_password():
+    st.stop()
+
+D = preparar(cargar())
+if D.empty:
+    st.warning("No hay movimientos en el archivo.")
+    st.stop()
+
+personas = [a for a in ["Daniel Montesinos", "Beatriz Cervantes"] if a in set(D["Autorizó"])]
+personas += sorted(set(D["Autorizó"]) - set(personas))
+paginas = {
+    "General": [
+        st.Page(pagina_general, title="Resumen general", icon=":material/dashboard:", url_path="general",
+                default=True),
+        st.Page(pagina_mes, title="Mes a mes", icon=":material/calendar_month:", url_path="mes-a-mes"),
+    ],
+    "Por persona": [
+        st.Page((lambda n=a: pagina_persona(n)), title=a, icon=":material/person:",
+                url_path=re.sub(r"[^a-z]+", "-", a.lower()).strip("-"))
+        for a in personas
+    ],
+    "Revisión": [
+        st.Page(pagina_revisar, title="Qué revisar", icon=":material/flag:", url_path="que-revisar"),
+        st.Page(pagina_casos, title="Casos a revisar", icon=":material/fact_check:", url_path="casos"),
+    ],
+}
+st.navigation(paginas).run()
