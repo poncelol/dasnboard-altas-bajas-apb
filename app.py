@@ -428,7 +428,7 @@ header[data-testid="stHeader"]{background:#ffffff;box-shadow:0 1px 4px rgba(0,21
 .ley-tot .ley-txt{color:rgba(0,0,0,.45)}
 .rk-fila{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:13.5px}
 .rk-n{width:22px;color:rgba(0,0,0,.35);font-size:12px;text-align:right;flex-shrink:0}
-.rk-txt{width:42%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(0,0,0,.88)}
+.rk-txt{width:50%;line-height:1.35;color:rgba(0,0,0,.88)}
 .rk-bar{flex:1;height:8px;background:#f5f5f5;border-radius:100px;overflow:hidden}
 .rk-bar>span{display:block;height:100%;border-radius:100px}
 .chip{display:inline-flex;align-items:center;gap:6px;margin-left:14px;white-space:nowrap}
@@ -965,41 +965,120 @@ def pagina_revisar() -> None:
     mostrar(estilo(fig, 440), cont)
 
 
+def tabla_casos(r: pd.DataFrame) -> pd.DataFrame:
+    """Cambios del semáforo con sus datos y la razón en palabras simples."""
+    t = pd.DataFrame({
+        "Semáforo": r["Revisar"].map({ROJO_TXT: "Rojo", AMARILLO_TXT: "Amarillo", VERDE_TXT: "Verde"}),
+        "Señales": r["Núm. alertas"].astype(int),
+        "¿Por qué?": r[list(ALERTAS)].apply(lambda f: " · ".join(EXPLICA[k] for k in ALERTAS if f[k]), axis=1),
+        "Autorizó": r["Autorizó"],
+        "Pidió": r["Solicitó"].str.title(),
+        "Mes": r["Mes (texto)"],
+        "Pedido el": r["FCHSOL"],
+        "Autorizado el": r["FCHAUT"],
+        "Tardó": r["Minutos para autorizar"].map(
+            lambda m: "" if pd.isna(m) else f"{m:.0f} min" if m < 120 else
+            f"{m / 60:.0f} h" if m < 2880 else f"{m / 1440:.0f} días"),
+        "Región": r["Región"],
+        "Unidad": r["NOMBRE DE UNIDAD OP."].str.title(),
+        "Folio": r["SCFOLIO"],
+        "Inventario": r["Inventario (corto)"],
+        "Producto": r["Producto"],
+        "Tipo de cambio": r["Tipo de cambio"],
+        "Mín. antes": r["SCMARMINACT"], "Mín. después": r["SCMARMINSOL"], "Cambio mín.": r["Cambio mín."],
+        "Máx. antes": r["SCMARMAXACT"], "Máx. después": r["SCMARMAXSOL"], "Cambio máx.": r["Cambio máx."],
+    })
+    return t.sort_values(["Señales", "Cambio máx."], ascending=False)
+
+
+def mostrar_casos(dest, t: pd.DataFrame, alto: int = 520) -> None:
+    fondo = {"Rojo": "#fff1f0", "Amarillo": "#fffbe6", "Verde": "#f6ffed"}
+    texto = {"Rojo": "#cf1322", "Amarillo": "#d48806", "Verde": "#389e0d"}
+    sty = (t.style
+           .map(lambda v: f"background-color:{fondo.get(v, '')};color:{texto.get(v, '')};font-weight:600",
+                subset=["Semáforo"])
+           .format({"Mín. antes": "{:.1f}", "Mín. después": "{:.1f}", "Cambio mín.": "{:+.1f}",
+                    "Máx. antes": "{:.1f}", "Máx. después": "{:.1f}", "Cambio máx.": "{:+.1f}"}, na_rep=""))
+    dest.dataframe(
+        sty, width=ANCHO, hide_index=True, height=alto,
+        column_config={
+            "Señales": st.column_config.ProgressColumn("Señales", min_value=0, max_value=6, format="%d",
+                                                       width="small"),
+            "¿Por qué?": st.column_config.TextColumn("¿Por qué?", width="large"),
+            "Pedido el": st.column_config.DatetimeColumn("Pedido el", format="DD/MM/YYYY HH:mm"),
+            "Autorizado el": st.column_config.DatetimeColumn("Autorizado el", format="DD/MM/YYYY HH:mm"),
+        },
+    )
+
+
 def pagina_casos() -> None:
     x = D
-    r = x[x["Núm. alertas"] >= 3].sort_values(["Núm. alertas", "Cambio máx."], ascending=False)
-    encabezado("Casos a revisar", "Cambios con 3 o más señales: los primeros que conviene revisar", "General")
+    r = x[x["Núm. alertas"] >= 1]
+    rojo, amarillo = r[r["Revisar"] == ROJO_TXT], r[r["Revisar"] == AMARILLO_TXT]
+    encabezado("Casos a revisar",
+               "Todos los cambios en amarillo y rojo del semáforo de revisión, con sus datos y la razón", "General")
+    html(f"<div class='aviso'>{ic('info')}<div>Aquí están los cambios que el <b>semáforo de revisión</b> marcó en "
+         "<b>rojo</b> (3 o más señales, revisar primero) y en <b>amarillo</b> (1 o 2 señales, conviene preguntar). "
+         "La columna <b>¿Por qué?</b> dice qué señales tiene cada cambio.</div></div>")
     seccion("Resumen")
-    c = st.columns(3, gap="medium")
-    stat(c[0], "Cambios con prioridad", f"{len(r):,}", "error", ROJO, 100 * len(r) / len(x),
-         f"{len(r):,} de {len(x):,} cambios ({100 * len(r) / len(x):.1f}%)")
-    stat(c[1], "Solicitudes involucradas", f"{r['Solicitud'].nunique():,}", "description", AMARILLO,
+    c = st.columns(4, gap="medium")
+    stat(c[0], "Rojo: 3 o más señales", f"{len(rojo):,}", "error", ROJO, 100 * len(rojo) / len(x),
+         f"{100 * len(rojo) / len(x):.0f}% de los {len(x):,} cambios · revisar primero")
+    stat(c[1], "Amarillo: 1 o 2 señales", f"{len(amarillo):,}", "warning", AMARILLO, 100 * len(amarillo) / len(x),
+         f"{100 * len(amarillo) / len(x):.0f}% de los {len(x):,} cambios · conviene preguntar")
+    stat(c[2], "Solicitudes involucradas", f"{r['Solicitud'].nunique():,}", "description", AZUL,
          100 * r["Solicitud"].nunique() / x["Solicitud"].nunique(),
          f"de {x['Solicitud'].nunique():,} solicitudes en total")
-    stat(c[2], "Productos distintos", f"{r['CVE. DE PRODUCTO'].nunique():,}", "shopping_cart", MORADO,
+    stat(c[3], "Productos distintos", f"{r['CVE. DE PRODUCTO'].nunique():,}", "shopping_cart", MORADO,
          100 * r["CVE. DE PRODUCTO"].nunique() / x["CVE. DE PRODUCTO"].nunique(),
          f"de {x['CVE. DE PRODUCTO'].nunique():,} productos con cambios")
     if r.empty:
+        st.success("No hay cambios en amarillo ni en rojo.")
         return
-    seccion("¿Cómo son estos casos?")
+
+    seccion("¿Cómo son estos casos? (amarillo y rojo juntos)")
     c = st.columns(2, gap="medium")
-    card_pastel(c[0], "¿Quién los autorizó?", "group", r["Autorizó"], COLORES_AUT, unidad="casos")
+    card_pastel(c[0], "¿En qué color están?", "traffic", r["Revisar"],
+                {ROJO_TXT: ROJO, AMARILLO_TXT: AMARILLO}, unidad="casos")
+    card_pastel(c[1], "¿Quién los autorizó?", "group", r["Autorizó"], COLORES_AUT, unidad="casos")
+    c = st.columns(2, gap="medium")
+    sen = r.melt(value_vars=list(ALERTAS), var_name="Alerta", value_name="Sí")
+    card_lista(c[0], "¿Qué señales tienen?", "flag", sen.loc[sen["Sí"], "Alerta"].map(EXPLICA), ROJO,
+               unidad="señales")
     card_pastel(c[1], "¿Qué tipo de cambio son?", "swap_vert", r["Tipo de cambio"], COLORES_TIPO, unidad="casos")
     c = st.columns(2, gap="medium")
     card_lista(c[0], "Regiones", "map", r["Región"], CIAN, unidad="casos")
     card_lista(c[1], "Productos", "shopping_cart", r["Producto"], NARANJA, unidad="casos")
+
     seccion("Lista de casos")
-    cols = ["Núm. alertas", "Alertas", "Autorizó", "Mes (texto)", "Región", "NOMBRE DE UNIDAD OP.",
-            "SCFOLIO", "Producto", "SCMARMINACT", "SCMARMINSOL", "SCMARMAXACT", "SCMARMAXSOL"]
-    card(f"{len(r):,} casos, del que tiene más señales al que tiene menos", "fact_check").dataframe(
-        r[cols], width=ANCHO, hide_index=True,
-        column_config={
-            "Núm. alertas": st.column_config.ProgressColumn("Señales", min_value=0, max_value=6, format="%d"),
-            "Alertas": "¿Por qué?", "Mes (texto)": "Mes", "NOMBRE DE UNIDAD OP.": "Unidad", "SCFOLIO": "Folio",
-            "SCMARMINACT": "Mín. antes", "SCMARMINSOL": "Mín. después",
-            "SCMARMAXACT": "Máx. antes", "SCMARMAXSOL": "Máx. después",
-        },
-    )
+    cont = card(f"Rojo: 3 o más señales · {len(rojo):,} cambios (revisar primero)", "error")
+    html("<div class='nota' style='min-height:0'>Ordenados del que tiene más señales al que tiene menos. "
+         "Desliza a la derecha para ver todos los datos del cambio.</div>", cont)
+    mostrar_casos(cont, tabla_casos(rojo), alto=min(520, 38 * (len(rojo) + 1) + 4))
+    cont = card(f"Amarillo: 1 o 2 señales · {len(amarillo):,} cambios (conviene preguntar)", "warning")
+    html("<div class='nota' style='min-height:0'>Ordenados del que tiene más señales al que tiene menos. "
+         "Desliza hacia abajo y a la derecha para ver todos.</div>", cont)
+    mostrar_casos(cont, tabla_casos(amarillo), alto=560)
+    st.download_button("Descargar la lista en Excel (amarillo y rojo)", icon=":material/download:",
+                       data=casos_excel(), file_name="casos_a_revisar.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@st.cache_data(ttl=3600, show_spinner="Preparando Excel…")
+def casos_excel() -> bytes:
+    r = D[D["Núm. alertas"] >= 1]
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        for nombre, sub in [("Rojo", r[r["Revisar"] == ROJO_TXT]), ("Amarillo", r[r["Revisar"] == AMARILLO_TXT])]:
+            t = tabla_casos(sub)
+            t.to_excel(xw, sheet_name=nombre, index=False)
+            ws = xw.book[nombre]
+            ws.freeze_panes = "A2"
+            ws.auto_filter.ref = ws.dimensions
+            for col in ws.columns:
+                ws.column_dimensions[col[0].column_letter].width = min(
+                    60, max(10, max(len(str(c.value or "")) for c in col[:200]) + 2))
+    return buf.getvalue()
 
 
 @st.cache_data(ttl=3600, show_spinner="Preparando Excel…")
