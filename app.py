@@ -1,6 +1,6 @@
 """
-Dashboard de movimientos de márgenes (mínimo / máximo) por autorizador,
-con comparativa Daniel vs. Beatriz y alertas para revisar posibles malas prácticas.
+Dashboard visual de movimientos de márgenes (mínimo / máximo) por mes,
+con señales para revisar posibles malas prácticas.
 
 Los datos NO van en el repositorio: se leen desde st.secrets.
 Ver .streamlit/secrets.toml.example y README.md.
@@ -15,7 +15,6 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import requests
 import streamlit as st
 
@@ -468,108 +467,6 @@ def pastel(serie: pd.Series, colores: dict | None, titulo: str, centro: str = ""
     return fig
 
 
-def pastel_por_persona(data: pd.DataFrame, campo: str, titulo: str, colores: dict | None = None,
-                       orden: list | None = None, top: int | None = None, alto: int = 400,
-                       centro: str = "cambios", top_por_persona: bool = False):
-    """Un pastel (dona) por autorizador, lado a lado, con los mismos colores para cada categoría."""
-    grupos = list(data.groupby("Autorizó"))
-    n = max(1, len(grupos))
-    fig = make_subplots(rows=1, cols=n, specs=[[{"type": "domain"}] * n],
-                        subplot_titles=[f"<b>{a}</b>" for a, _ in grupos])
-    if top and top_por_persona:  # las principales de cada quien
-        data = data.copy()
-        principales = data.groupby("Autorizó")[campo].transform(
-            lambda s: s.isin(s.value_counts().head(top).index))
-        data[campo] = data[campo].where(principales, "Otros")
-        grupos = list(data.groupby("Autorizó"))
-    elif top:  # mismas categorías "principales" para todos, el resto va a "Otros"
-        principales = data[campo].value_counts().head(top).index
-        data = data.assign(**{campo: data[campo].where(data[campo].isin(principales), "Otros")})
-        grupos = list(data.groupby("Autorizó"))
-    for i, (a, x) in enumerate(grupos, 1):
-        vc = x[campo].value_counts()
-        if orden:
-            vc = vc.reindex([o for o in orden if o in vc.index] + [o for o in vc.index if o not in orden])
-        elif "Otros" in vc.index:
-            vc = pd.concat([vc.drop("Otros"), vc[["Otros"]]])
-        fig.add_trace(go.Pie(
-            labels=vc.index, values=vc.values, hole=0.5, sort=False, name=a,
-            marker=dict(colors=[colores.get(lbl, GRIS) for lbl in vc.index]) if colores else None,
-            textinfo="percent", textfont_size=15, insidetextorientation="horizontal", textposition="inside",
-            hovertemplate="<b>%{label}</b><br>%{value:,} " + centro + "<br>%{percent}<extra>" + a + "</extra>",
-            title=dict(text=f"<b>{int(vc.sum()):,}</b><br>{centro}", font=dict(size=15)),
-        ), 1, i)
-    fig.update_annotations(font_size=17)
-    fig.update_layout(title=titulo, font=FUENTE, height=alto, title_font_size=19,
-                      uniformtext_minsize=12, uniformtext_mode="hide",
-                      margin=dict(l=10, r=10, t=100, b=10), legend_title_text="",
-                      legend=dict(orientation="h", yanchor="top", y=-0.02, x=0.5, xanchor="center"))
-    return fig
-
-
-def _fmt_tiempo(minutos: float) -> str:
-    if pd.isna(minutos):
-        return "—"
-    if minutos < 120:
-        return f"{minutos:.0f} min"
-    if minutos < 48 * 60:
-        return f"{minutos / 60:.0f} h"
-    return f"{minutos / 1440:.0f} días"
-
-
-def versus(data: pd.DataFrame, completo: bool = True) -> None:
-    """Panel 'cara a cara': cada renglón muestra el dato de cada persona con una barra proporcional."""
-    grupos = list(data.groupby("Autorizó"))
-    if len(grupos) != 2:
-        st.info("Selecciona a las dos personas en los filtros para ver la comparación cara a cara.")
-        return
-    pct = lambda s: 100 * s.mean()  # noqa: E731
-    filas = [
-        ("📦 Cambios autorizados", lambda x: len(x), lambda v: f"{v:,.0f}"),
-        ("📝 Solicitudes (folios)", lambda x: x["Solicitud"].nunique(), lambda v: f"{v:,.0f}"),
-        ("📅 Meses autorizando", lambda x: x["Mes"].nunique(), lambda v: f"{v:.0f}"),
-        ("🚩 Cambios con alguna señal", lambda x: pct(x["Núm. alertas"] > 0), lambda v: f"{v:.0f}%"),
-        ("🔴 Cambios con 3+ señales", lambda x: pct(x["Núm. alertas"] >= 3), lambda v: f"{v:.0f}%"),
-        ("⬇️ Bajó el margen mínimo", lambda x: pct(x["DETERMINACION_MIN"] == "DECREMENTO"), lambda v: f"{v:.0f}%"),
-        ("⬆️ Subió el margen máximo", lambda x: pct(x["DETERMINACION_MAX"] == "INCREMENTO"), lambda v: f"{v:.0f}%"),
-        ("📏 Cuánto movió el mínimo (prom.)",
-         lambda x: x.loc[x["Cambio mín."] != 0, "Cambio mín."].abs().mean(), lambda v: f"{v:.1f} pts"),
-        ("📏 Cuánto movió el máximo (prom.)",
-         lambda x: x.loc[x["Cambio máx."] != 0, "Cambio máx."].abs().mean(), lambda v: f"{v:.1f} pts"),
-        ("⏳ Tiempo típico para autorizar", lambda x: x["Minutos para autorizar"].median(), _fmt_tiempo),
-    ]
-    if completo:
-        filas += [(f"{ICONOS[f]} {EXPLICA[f]}", (lambda f: lambda x: pct(x[f]))(f), lambda v: f"{v:.0f}%")
-                  for f in ["Autorización exprés", "Fuera de horario", "Cambio repetido",
-                            "Autorización en lote", "Ampliación doble", "Auto-aprobación"]]
-    (a1, x1), (a2, x2) = grupos
-    c1, c2 = COLORES_AUT.get(a1, "#555"), COLORES_AUT.get(a2, "#555")
-    html = [f"""<div style="display:grid;grid-template-columns:1fr minmax(170px,240px) 1fr;gap:6px 14px;
-        align-items:center;font-family:inherit">
-        <div style="text-align:right;font-size:1.5rem;font-weight:700;color:{c1}">👤 {a1}</div><div></div>
-        <div style="font-size:1.5rem;font-weight:700;color:{c2}">👤 {a2}</div>"""]
-    for etiqueta, fn, fmt in filas:
-        v1, v2 = fn(x1), fn(x2)
-        v1, v2 = (0 if pd.isna(v1) else v1), (0 if pd.isna(v2) else v2)
-        mx = max(v1, v2) or 1
-        w1, w2 = 100 * v1 / mx, 100 * v2 / mx
-        html.append(f"""
-        <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px">
-          <span style="font-size:1.35rem;font-weight:700;color:{c1};white-space:nowrap">{fmt(v1)}</span>
-          <div style="width:65%;display:flex;justify-content:flex-end">
-            <div style="height:20px;width:{w1:.0f}%;background:{c1};border-radius:10px 0 0 10px"></div></div>
-        </div>
-        <div style="text-align:center;font-size:1rem;padding:8px 4px;border-bottom:1px solid rgba(128,128,128,.25)">
-          {etiqueta}</div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <div style="width:65%"><div style="height:20px;width:{w2:.0f}%;background:{c2};
-            border-radius:0 10px 10px 0"></div></div>
-          <span style="font-size:1.35rem;font-weight:700;color:{c2};white-space:nowrap">{fmt(v2)}</span>
-        </div>""")
-    html.append("</div>")
-    st.markdown(re.sub(r"\n\s*", " ", "".join(html)), unsafe_allow_html=True)
-
-
 # ================================================================ app
 if not check_password():
     st.stop()
@@ -578,56 +475,18 @@ df_all = cargar()
 
 st.markdown(
     "<h1 style='margin-bottom:0'>📊 Cambios de márgenes autorizados</h1>"
-    "<p style='font-size:1.15rem;color:#607d8b;margin-top:4px'>Daniel Montesinos vs. Beatriz Cervantes</p>",
+    f"<p style='font-size:1.15rem;color:#607d8b;margin-top:4px'>{mes_largo(df_all['Mes'].min())} a "
+    f"{mes_largo(df_all['Mes'].max())}</p>",
     unsafe_allow_html=True,
 )
 
-with st.sidebar:
-    st.header("🔎 Filtros")
-    auts = sorted(df_all["Autorizó"].unique())
-    f_aut = st.multiselect("👤 ¿Quién autorizó?", auts, default=auts)
-    meses = sorted(df_all["Mes"].unique())
-    if len(meses) > 1:
-        f_mes = st.select_slider("📅 Meses", options=meses, value=(meses[0], meses[-1]), format_func=mes_corto)
-    else:
-        f_mes = (meses[0], meses[0])
-    with st.expander("Más filtros"):
-        f_reg = st.multiselect("Región", sorted(df_all["NOMBRE DE SUCURSAL"].unique()))
-        f_inv = st.multiselect("Inventario", sorted(df_all["DESCRIPCIÓN DEL INVENTARIO"].unique()))
-        f_sol = st.multiselect("Solicitó", sorted(df_all["Solicitó"].unique()))
-        f_tipo = st.radio("Tipo de movimiento", ["Todos", "Solo incrementos", "Solo decrementos"])
-        f_campo = st.radio("Aplicar tipo a", ["Mínimo o máximo", "Solo mínimo", "Solo máximo"])
+# Umbrales fijos de las señales (antes se podían cambiar en la barra lateral)
+u = {"u_dmax": 40.0, "u_rmax": 100, "u_maxalto": 100.0, "u_dmin": 10.0, "u_expres": 2.0,
+     "u_tarde": 72, "u_hini": 8, "u_hfin": 19, "u_dias": 30, "u_lote": 5}
 
-    with st.expander("⚙️ Umbrales de alertas", expanded=False):
-        u = {
-            "u_dmax": st.number_input("Subida de máximo ≥ (pts)", 1.0, 500.0, 40.0, 5.0),
-            "u_rmax": st.number_input("…o subida de máximo > (% del actual)", 10, 1000, 100, 10),
-            "u_maxalto": st.number_input("Máximo solicitado ≥", 10.0, 500.0, 100.0, 10.0),
-            "u_dmin": st.number_input("Baja de mínimo ≥ (pts)", 1.0, 100.0, 10.0, 1.0),
-            "u_expres": st.number_input("Autorización exprés < (minutos)", 0.5, 60.0, 2.0, 0.5),
-            "u_tarde": st.number_input("Autorización tardía > (horas)", 1, 720, 72, 12),
-            "u_hini": st.number_input("Horario laboral desde (h)", 0, 23, 8),
-            "u_hfin": st.number_input("Horario laboral hasta (h)", 1, 24, 19),
-            "u_dias": st.number_input("Cambio repetido en < (días)", 1, 365, 30, 5),
-            "u_lote": st.number_input("Lote: solicitudes en el mismo minuto ≥", 2, 50, 5),
-        }
-
-df = marcar(df_all, u)
-m = df["Autorizó"].isin(f_aut) & df["Mes"].between(*f_mes)
-if f_reg:
-    m &= df["NOMBRE DE SUCURSAL"].isin(f_reg)
-if f_inv:
-    m &= df["DESCRIPCIÓN DEL INVENTARIO"].isin(f_inv)
-if f_sol:
-    m &= df["Solicitó"].isin(f_sol)
-if f_tipo != "Todos":
-    v = "INCREMENTO" if f_tipo == "Solo incrementos" else "DECREMENTO"
-    mm, mx = df["DETERMINACION_MIN"] == v, df["DETERMINACION_MAX"] == v
-    m &= {"Mínimo o máximo": mm | mx, "Solo mínimo": mm, "Solo máximo": mx}[f_campo]
-d = df[m].copy()
-
+d = marcar(df_all, u).copy()
 if d.empty:
-    st.warning("No hay movimientos con estos filtros.")
+    st.warning("No hay movimientos en el archivo.")
     st.stop()
 
 d["Mes (texto)"] = d["Mes"].map(mes_corto)
@@ -638,9 +497,10 @@ d["Tipo de cambio"] = tipo_de_cambio(d)
 d["Inventario (corto)"] = d["DESCRIPCIÓN DEL INVENTARIO"].map(inventario_corto)
 d["Revisar"] = np.select([d["Núm. alertas"] >= 3, d["Núm. alertas"] >= 1],
                          ["🔴 Revisar con prioridad", "🟡 Revisar"], "🟢 Sin señales")
+d["Señal principal"] = d[list(ALERTAS)].apply(
+    lambda r: next((f"{ICONOS[f]} {EXPLICA[f]}" for f in ALERTAS if r[f]), ""), axis=1)
 
-tabs = st.tabs(["🏠 Resumen", "📅 Mes a mes", "⚖️ Daniel vs. Beatriz", "🚩 Qué revisar",
-                "🔍 Caso por caso", "📋 Datos"])
+tabs = st.tabs(["🏠 Resumen", "📅 Mes a mes", "🚩 Qué revisar", "🔍 Casos a revisar"])
 
 # ================================================================ Resumen
 with tabs[0]:
@@ -661,54 +521,28 @@ with tabs[0]:
             color_semaforo(pct_con), "🚩")
     tarjeta(c[3], "Prioridad alta", f"{prio:,}", "cambios con 3 o más señales",
             ROJO if prio else VERDE, "🔴")
-
-    st.write("")
-    c1, c2 = st.columns(2)
-    with c1:
-        quien = d["Autorizó"].value_counts()
-        fig = go.Figure(go.Pie(labels=quien.index, values=quien.values, hole=0.5, sort=False,
-                               marker_colors=[COLORES_AUT.get(a, GRIS) for a in quien.index],
-                               textinfo="percent+value", textfont_size=16,
-                               title=dict(text=f"<b>{n_mov:,}</b><br>cambios", font=dict(size=16))))
-        fig.update_layout(title="👤 ¿Quién autorizó más cambios?")
-        estilo(fig, 400).update_layout(legend=dict(orientation="h", yanchor="top", y=-0.02, x=0.5,
-                                                   xanchor="center"))
-        mostrar(fig)
-    with c2:
-        mostrar(pastel_por_persona(d, "Revisar", "🚦 Semáforo de cada quien", COLORES_REVISAR,
-                                   orden=list(COLORES_REVISAR), alto=400))
-    st.caption("🟢 sin señales · 🟡 1 o 2 señales para revisar · 🔴 3 o más señales (revisar primero)")
-
-    st.subheader("⚖️ Cara a cara")
-    versus(d, completo=False)
     st.write("")
 
-    st.subheader("↕️ ¿Los márgenes suben o bajan?")
-    st.caption("🔴 Sube = el producto se puede vender más caro · 🔵 Baja = se puede vender más barato · "
-               "⚪ Sin cambio")
-    c1, c2 = st.columns(2)
-    orden_sb = ["Sube", "Baja", "Sin cambio"]
-    mostrar(pastel_por_persona(d, "Mínimo", "Margen mínimo", COLORES_SUBE_BAJA, orden_sb, alto=380), c1)
-    mostrar(pastel_por_persona(d, "Máximo", "Margen máximo", COLORES_SUBE_BAJA, orden_sb, alto=380), c2)
+    c = st.columns(2)
+    mostrar(pastel(d["Tipo de cambio"], COLORES_TIPO, "🔄 ¿Qué tipo de cambios se hicieron?",
+                   f"<b>{n_mov:,}</b><br>cambios", alto=420), c[0])
+    mostrar(pastel(d["Revisar"], COLORES_REVISAR, "🚦 Semáforo de todos los cambios",
+                   f"<b>{n_mov:,}</b><br>cambios", alto=420), c[1])
+    st.caption("⬇️ Bajar el mínimo = se permite vender más barato · ⬆️ Subir el máximo = se permite vender más caro · "
+               "🟢 sin señales · 🟡 1 o 2 señales · 🔴 3 o más señales")
 
-    st.subheader("🚩 ¿Qué tipo de señales tiene cada quien?")
-    sen = d[d["Núm. alertas"] > 0].melt(id_vars=["Autorizó"], value_vars=list(ALERTAS),
-                                        var_name="Alerta", value_name="Sí")
-    sen = sen[sen["Sí"]]
-    if sen.empty:
-        st.success("✅ No hay señales para revisar con estos filtros.")
-    else:
-        sen["Señal"] = sen["Alerta"].map(lambda f: f"{ICONOS[f]} {EXPLICA[f]}")
-        mostrar(pastel_por_persona(sen, "Señal", "Reparto de las señales encontradas", top=6, alto=480,
-                                   centro="señales"))
+    c = st.columns(3)
+    mostrar(pastel(d["Mínimo"], COLORES_SUBE_BAJA, "⬇️ Margen mínimo", alto=360), c[0])
+    mostrar(pastel(d["Máximo"], COLORES_SUBE_BAJA, "⬆️ Margen máximo", alto=360), c[1])
+    mostrar(pastel(d["Inventario (corto)"], None, "📦 ¿De qué inventario?", alto=360), c[2])
 
-    pm = d.groupby(["Mes", "Mes (texto)", "Autorizó"]).size().reset_index(name="Cambios").sort_values("Mes")
-    fig = px.bar(pm, x="Mes (texto)", y="Cambios", color="Autorizó", text="Cambios",
-                 color_discrete_map=COLORES_AUT, title="📅 Cambios autorizados por mes",
+    pm = d.groupby(["Mes", "Mes (texto)"]).size().reset_index(name="Cambios").sort_values("Mes")
+    fig = px.bar(pm, x="Mes (texto)", y="Cambios", text="Cambios", title="📅 Cambios autorizados por mes",
                  category_orders={"Mes (texto)": ORDEN_MESES})
+    fig.update_traces(marker_color="#4c78a8", textposition="outside", textfont_size=16, cliponaxis=False)
     fig.update_xaxes(title="")
     fig.update_yaxes(title="", showticklabels=False, showgrid=False)
-    mostrar(estilo(fig, 400))
+    mostrar(estilo(fig, 400, leyenda=False))
 
     st.subheader("🗺️ ¿Dónde se hacen más cambios?")
     st.caption("Cada cuadro es una región y, adentro, sus unidades operativas. Más grande = más cambios. "
@@ -765,7 +599,7 @@ with tabs[1]:
     quien = x["Autorizó"].value_counts()
     puntos = [
         f"Se autorizaron <b>{len(x):,} cambios</b> en <b>{x['Solicitud'].nunique():,} solicitudes</b>"
-        + (f" ({'▲' if len(x) > len(prev) else '▼'} {abs(len(x) - len(prev)):,} vs. "
+        + (f" ({'▲' if len(x) > len(prev) else '▼'} {abs(len(x) - len(prev)):,} respecto a "
            f"{mes_largo(meses_d[idx - 1]).split()[0].lower()})" if prev is not None else "") + ".",
         f"Autorizó: <b>{', '.join(f'{a} ({n:,})' for a, n in quien.items())}</b>.",
         f"Lo que más se hizo: <b>{tipo.index[0]}</b> ({100 * tipo.iloc[0] / len(x):.0f}% de los cambios).",
@@ -814,155 +648,80 @@ with tabs[1]:
                  column_config={"% con señal": st.column_config.ProgressColumn(
                      "% con señal", min_value=0, max_value=100, format="%d%%")})
 
-# ================================================================ Comparativo
-with tabs[2]:
-    st.info(
-        "⚠️ Los dos **no autorizaron en los mismos meses** "
-        f"({'; '.join(f'{a}: {mes_corto(x.Mes.min())} a {mes_corto(x.Mes.max())}' for a, x in d.groupby('Autorizó'))}). "
-        "Por eso conviene fijarse en los **porcentajes** más que en los totales."
-    )
-    versus(d, completo=True)
-    st.caption("La barra más larga de cada renglón indica quién tiene el número más alto.")
-    st.write("")
-
-    d_tipo = d.assign(**{"Tipo de cambio": "Mínimo " + d["Mínimo"].str.lower() + " · Máximo "
-                         + d["Máximo"].str.lower()})
-    mostrar(pastel_por_persona(d_tipo, "Tipo de cambio", "🔀 ¿Qué combinación de cambios autoriza cada uno?",
-                               top=5, alto=460))
-
-    sol = d.groupby(["Autorizó", "Solicitud"])["Minutos para autorizar"].first().reset_index(name="Minutos")
-    orden_t = ["⚡ Menos de 2 min", "⏱️ Menos de 1 hora", "📆 El mismo día", "🗓️ 1 a 3 días", "🐢 Más de 3 días"]
-    sol["Tiempo"] = pd.cut(sol["Minutos"], [-1, 2, 60, 1440, 4320, 1e9], labels=orden_t).astype(str)
-    colores_t = dict(zip(orden_t, ["#c62828", "#66bb6a", "#2e7d32", "#f9a825", "#8d6e63"]))
-    mostrar(pastel_por_persona(sol, "Tiempo", "⏳ ¿Cuánto tarda cada uno en autorizar una solicitud?",
-                               colores_t, orden_t, alto=440, centro="solicitudes"))
-
-    c1, c2 = st.columns(2)
-    mostrar(pastel_por_persona(d, "Solicitó", "🙋 ¿Quién le pide los cambios?", top=5, alto=520,
-                               top_por_persona=True), c1)
-    mostrar(pastel_por_persona(d, "DESCRIPCIÓN DEL INVENTARIO", "🏷️ ¿De qué inventario son?", top=5,
-                               alto=480), c2)
-    mostrar(pastel_por_persona(d, "NOMBRE DE SUCURSAL", "🗺️ ¿De qué regiones son los cambios?", top=6,
-                               alto=480))
-
-    with st.expander("📋 Ver los números en tabla"):
-        st.dataframe(resumen(d), width=ANCHO, hide_index=True)
-        st.dataframe(magnitudes(d), width=ANCHO, hide_index=True)
-        comb = pd.crosstab(d["Combinación"], d["Autorizó"], normalize="columns").mul(100).round(1)
-        comb.columns = [f"{c} (%)" for c in comb.columns]
-        st.dataframe(comb, width=ANCHO)
-
 # ================================================================ Qué revisar
-with tabs[3]:
+with tabs[2]:
     st.warning(
         "Estas señales **no prueban una mala práctica**: indican cambios que vale la pena preguntar. "
         "Muchos tienen una explicación válida (temporada, ofertas, costos de la región)."
     )
-    ta = tabla_alertas(d)
-    tasas = ta.melt(id_vars="Alerta", value_vars=[c for c in ta.columns if c.endswith("por 100 mov.")],
-                    var_name="Autorizó", value_name="De cada 100 cambios")
-    tasas["Autorizó"] = tasas["Autorizó"].str.replace(" · por 100 mov.", "", regex=False)
-    tasas["Señal"] = tasas["Alerta"].map(lambda f: f"{ICONOS[f]} {EXPLICA[f]}")
-    tasas = tasas[tasas.groupby("Señal")["De cada 100 cambios"].transform("sum") > 0]
-    if tasas.empty:
-        st.success("✅ No hay señales para revisar con estos filtros.")
+    sen = d.melt(value_vars=list(ALERTAS), var_name="Alerta", value_name="Sí")
+    sen = sen[sen["Sí"]]
+    if sen.empty:
+        st.success("✅ No hay señales para revisar.")
     else:
-        fig = px.bar(tasas, y="Señal", x="De cada 100 cambios", color="Autorizó", barmode="group",
-                     orientation="h", color_discrete_map=COLORES_AUT, text="De cada 100 cambios",
-                     title="De cada 100 cambios que autoriza cada uno, ¿cuántos tienen esta señal?")
-        fig.update_yaxes(title="", categoryorder="total ascending")
-        fig.update_xaxes(visible=False)
-        fig.update_traces(textposition="outside")
-        mostrar(estilo(fig, 120 + 70 * tasas["Señal"].nunique()))
+        sen["Señal"] = sen["Alerta"].map(lambda f: f"{ICONOS[f]} {EXPLICA[f]}")
+        c = st.columns([3, 2])
+        mostrar(pastel(top_n(sen["Señal"], 7), None, "🚩 ¿Qué señales aparecen más?",
+                       f"<b>{len(sen):,}</b><br>señales", alto=480), c[0])
+        with c[1]:
+            st.write("")
+            st.markdown("**¿Qué significa cada señal?**")
+            for f, txt in ALERTAS.items():
+                st.markdown(f"{ICONOS[f]} **{EXPLICA[f]}**  \n<span style='color:gray;font-size:.9rem'>"
+                            f"{txt.format(**u)}</span>", unsafe_allow_html=True)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        dias = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
-        hm = (d.assign(Día=d["FCHAUT"].dt.weekday.map(dict(enumerate(dias))))
-              .groupby(["Día", "Hora autorización"]).size().reset_index(name="Cambios"))
-        piv = hm.pivot(index="Día", columns="Hora autorización", values="Cambios").reindex(dias).fillna(0)
-        piv = piv.reindex(columns=range(24), fill_value=0)
-        fig = px.imshow(piv, color_continuous_scale="Reds", aspect="auto",
-                        labels=dict(x="Hora del día", y="", color="Cambios"),
-                        title="🕒 ¿A qué hora y qué día se autoriza?")
-        fig.update_xaxes(dtick=2, ticksuffix="h")
-        mostrar(estilo(fig, 380, leyenda=False), c1)
-        st.caption(f"Lo normal es de lunes a viernes entre {u['u_hini']} h y {u['u_hfin']} h. "
-                   "Las manchas fuera de ese horario son las que conviene revisar.")
-    with c2:
-        sol = (d.groupby(["Autorizó", "Solicitud"])["Minutos para autorizar"].first().reset_index(name="Minutos"))
-        sol["Tiempo"] = pd.cut(sol["Minutos"], [-1, 2, 60, 1440, 4320, 1e9],
-                               labels=["⚡ Menos de 2 min", "⏱️ Menos de 1 hora", "📆 El mismo día",
-                                       "🗓️ 1 a 3 días", "🐢 Más de 3 días"])
-        sr = sol.groupby(["Autorizó", "Tiempo"], observed=False).size().reset_index(name="Solicitudes")
-        sr["%"] = (100 * sr["Solicitudes"] / sr.groupby("Autorizó")["Solicitudes"].transform("sum")).round(0)
-        fig = px.bar(sr, x="Tiempo", y="%", color="Autorizó", barmode="group", color_discrete_map=COLORES_AUT,
-                     text=sr["%"].astype(int).astype(str) + "%", title="⏳ ¿Cuánto tardan en autorizar?")
-        fig.update_traces(textposition="outside", textangle=0)
-        fig.update_xaxes(title="", tickangle=0)
-        fig.update_yaxes(visible=False)
-        mostrar(estilo(fig, 380), c2)
+    c = st.columns(2)
+    sol = d.groupby("Solicitud")["Minutos para autorizar"].first().reset_index(name="Minutos")
+    orden_t = ["⚡ Menos de 2 min", "⏱️ Menos de 1 hora", "📆 El mismo día", "🗓️ 1 a 3 días", "🐢 Más de 3 días"]
+    sol["Tiempo"] = pd.cut(sol["Minutos"], [-1, 2, 60, 1440, 4320, 1e9], labels=orden_t).astype(str)
+    colores_t = dict(zip(orden_t, ["#c62828", "#66bb6a", "#2e7d32", "#f9a825", "#8d6e63"]))
+    mostrar(pastel(sol["Tiempo"], colores_t, "⏳ ¿Cuánto se tarda en autorizar?",
+                   f"<b>{len(sol):,}</b><br>solicitudes", alto=420), c[0])
+    horario = np.where(d["Fuera de horario"], "🌙 Noche o fin de semana", "☀️ Horario normal")
+    mostrar(pastel(pd.Series(horario), {"☀️ Horario normal": "#fbc02d", "🌙 Noche o fin de semana": "#283593"},
+                   "🕒 ¿Cuándo se autoriza?", alto=420), c[1])
+    st.caption(f"Horario normal = lunes a viernes de {u['u_hini']} a {u['u_hfin']} h.")
 
     st.subheader("📈 Margen máximo: antes y después")
     st.caption("Cada punto es un cambio. Los que quedan **muy arriba de la línea gris** son subidas grandes.")
-    x = d.copy()
-    x["Señales"] = np.where(x["Núm. alertas"] > 0, "Con señal", "Sin señal")
-    fig = px.scatter(x, x="SCMARMAXACT", y="SCMARMAXSOL", color="Autorizó", symbol="Señales",
-                     color_discrete_map=COLORES_AUT, opacity=0.7,
+    fig = px.scatter(d, x="SCMARMAXACT", y="SCMARMAXSOL", color="Revisar", color_discrete_map=COLORES_REVISAR,
+                     opacity=0.75, category_orders={"Revisar": list(COLORES_REVISAR)},
                      hover_data={"DESCRIPCION DEL PRODUCTO": True, "NOMBRE DE SUCURSAL": True, "Mes": True,
-                                 "Alertas": True})
-    lim = float(max(x["SCMARMAXACT"].max(), x["SCMARMAXSOL"].max()))
+                                 "Alertas": True, "Revisar": False})
+    lim = float(max(d["SCMARMAXACT"].max(), d["SCMARMAXSOL"].max()))
     fig.add_trace(go.Scatter(x=[0, lim], y=[0, lim], mode="lines", line=dict(dash="dot", color="gray"),
                              name="Sin cambio"))
+    fig.update_traces(marker_size=9, selector=dict(mode="markers"))
     fig.update_layout(xaxis_title="Máximo antes", yaxis_title="Máximo después")
     mostrar(estilo(fig, 480))
 
-    with st.expander("📋 Ver los números en tabla"):
-        for f, txt in ALERTAS.items():
-            st.markdown(f"- {ICONOS[f]} **{f}:** {txt.format(**u)}")
-        st.dataframe(ta, width=ANCHO, hide_index=True)
-        rep = (d.groupby(["Clave producto-UO", "DESCRIPCION DEL PRODUCTO", "NOMBRE DE UNIDAD OP.",
-                          "DESCRIPCIÓN DEL INVENTARIO"])
-               .agg(Cambios=("Solicitud", "size"), Autorizó=("Autorizó", lambda s: ", ".join(sorted(set(s)))),
-                    Meses=("Mes", lambda s: ", ".join(sorted(set(s)))))
-               .reset_index())
-        rep = rep[rep["Cambios"] >= 2].sort_values("Cambios", ascending=False).drop(columns="Clave producto-UO")
-        st.markdown("**Productos que se cambiaron más de una vez en el mismo lugar**")
-        st.dataframe(rep, width=ANCHO, hide_index=True)
-
-# ================================================================ Caso por caso
-with tabs[4]:
-    st.caption("Los cambios con más señales aparecen primero. Elige una señal para ver solo esos casos.")
-    opciones = {f"{ICONOS[f]} {EXPLICA[f]}": f for f in ALERTAS}
-    sel = st.multiselect("Ver solo cambios con:", list(opciones), default=[])
-    minimo = st.slider("Número mínimo de señales", 1, len(ALERTAS), 1)
-    r = d[d["Núm. alertas"] >= minimo]
-    if sel:
-        r = r[r[[opciones[s] for s in sel]].any(axis=1)]
-    st.markdown(f"### {len(r):,} cambios en {r['Solicitud'].nunique():,} solicitudes")
-    cols = ["Revisar", "Núm. alertas", "Alertas", "Autorizó", "Solicitó", "FCHSOL", "FCHAUT",
-            "NOMBRE DE SUCURSAL", "NOMBRE DE UNIDAD OP.", "SCFOLIO", "DESCRIPCION DEL PRODUCTO",
-            "SCMARMINACT", "SCMARMINSOL", "SCMARMAXACT", "SCMARMAXSOL"]
-    st.dataframe(
-        r.sort_values(["Núm. alertas", "Cambio máx."], ascending=False)[cols],
-        width=ANCHO, hide_index=True,
-        column_config={
-            "Revisar": "Semáforo", "Núm. alertas": st.column_config.ProgressColumn(
-                "Señales", min_value=0, max_value=6, format="%d"),
-            "Alertas": "¿Por qué?", "FCHSOL": "Pedido el", "FCHAUT": "Autorizado el",
-            "NOMBRE DE SUCURSAL": "Región", "NOMBRE DE UNIDAD OP.": "Unidad", "SCFOLIO": "Folio",
-            "DESCRIPCION DEL PRODUCTO": "Producto", "SCMARMINACT": "Mín. antes", "SCMARMINSOL": "Mín. después",
-            "SCMARMAXACT": "Máx. antes", "SCMARMAXSOL": "Máx. después",
-        },
-    )
-
-# ================================================================ Datos
-with tabs[5]:
-    st.dataframe(d[[c for c in DETALLE_COLS if c in d.columns]], width=ANCHO, hide_index=True)
+# ================================================================ Casos a revisar
+with tabs[3]:
+    r = d[d["Núm. alertas"] >= 3].sort_values(["Núm. alertas", "Cambio máx."], ascending=False)
+    st.markdown(f"<p style='font-size:1.3rem'>🔴 <b>{len(r):,} cambios</b> en <b>{r['Solicitud'].nunique():,} "
+                "solicitudes</b> tienen 3 o más señales. Son los primeros que conviene revisar.</p>",
+                unsafe_allow_html=True)
+    if not r.empty:
+        c = st.columns(2)
+        mostrar(pastel(top_n(r["NOMBRE DE SUCURSAL"].str.title(), 6), None, "🗺️ ¿De qué región son?",
+                       alto=380), c[0])
+        mostrar(pastel(r["Tipo de cambio"], COLORES_TIPO, "🔄 ¿Qué tipo de cambio son?", alto=380), c[1])
+        cols = ["Núm. alertas", "Alertas", "Mes (texto)", "NOMBRE DE SUCURSAL", "NOMBRE DE UNIDAD OP.", "SCFOLIO",
+                "DESCRIPCION DEL PRODUCTO", "SCMARMINACT", "SCMARMINSOL", "SCMARMAXACT", "SCMARMAXSOL"]
+        st.dataframe(
+            r[cols], width=ANCHO, hide_index=True,
+            column_config={
+                "Núm. alertas": st.column_config.ProgressColumn("Señales", min_value=0, max_value=6, format="%d"),
+                "Alertas": "¿Por qué?", "Mes (texto)": "Mes", "NOMBRE DE SUCURSAL": "Región",
+                "NOMBRE DE UNIDAD OP.": "Unidad", "SCFOLIO": "Folio", "DESCRIPCION DEL PRODUCTO": "Producto",
+                "SCMARMINACT": "Mín. antes", "SCMARMINSOL": "Mín. después",
+                "SCMARMAXACT": "Máx. antes", "SCMARMAXSOL": "Máx. después",
+            },
+        )
 
 st.download_button(
-    "⬇️ Descargar Excel con la información filtrada",
+    "⬇️ Descargar Excel con toda la información",
     data=a_excel(d),
-    file_name="movimientos_filtrados.xlsx",
+    file_name="movimientos_margenes.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
