@@ -10,6 +10,7 @@ import gzip
 import hmac
 import io
 import re
+from html import escape
 
 import numpy as np
 import pandas as pd
@@ -436,6 +437,27 @@ header[data-testid="stHeader"]{background:#ffffff;box-shadow:0 1px 4px rgba(0,21
 .mes-ley>div{display:flex;align-items:center;gap:8px;padding:3px 0;color:rgba(0,0,0,.65)}
 .mes-ley b{margin-left:auto;color:rgba(0,0,0,.88)}
 .stat{height:100%}
+.tabla-casos{overflow:auto;border:1px solid #f0f0f0;border-radius:8px;margin:6px 0 10px}
+.tabla-casos table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;min-width:1250px}
+.tabla-casos th{position:sticky;top:0;background:#fafafa;color:rgba(0,0,0,.65);font-weight:600;text-align:left;
+  padding:8px 10px;border-bottom:1px solid #f0f0f0;z-index:1;white-space:nowrap;height:35px}
+.tabla-casos thead tr:nth-child(2) th{top:35px}
+.tabla-casos th.grp{text-align:center}
+.tabla-casos td{padding:8px 10px;border-bottom:1px solid #f0f0f0;vertical-align:top;color:rgba(0,0,0,.88)}
+.tabla-casos .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.tabla-casos td.cambio{font-weight:700}
+.tabla-casos td.cambio .msi{vertical-align:-2px;margin-right:2px}
+.tabla-casos .sep{border-left:1px solid #f0f0f0}
+.tabla-casos .porque{min-width:250px;max-width:330px}
+.tabla-casos .prod{min-width:160px;max-width:220px}
+.tabla-casos .fechas{white-space:nowrap}
+.tabla-casos .rz{display:flex;gap:6px;align-items:flex-start;line-height:1.35;padding:1px 0}
+.tabla-casos .rz .msi{margin-top:2px}
+.tabla-casos .sub{color:rgba(0,0,0,.45);font-size:12px;margin-top:2px}
+.chip-sem{display:inline-block;padding:1px 8px;border:1px solid;border-radius:4px;font-weight:600;font-size:12px}
+.ley-cambios{font-size:12.5px;color:rgba(0,0,0,.65);margin:2px 0 6px;line-height:2}
+.chip-c{display:inline-block;padding:0 8px;border-radius:4px;font-weight:600;font-size:12px;margin-right:4px;
+  line-height:20px}
 </style>
 """
 
@@ -991,24 +1013,92 @@ def tabla_casos(r: pd.DataFrame) -> pd.DataFrame:
     return t.sort_values(["Señales", "Cambio máx."], ascending=False)
 
 
-def mostrar_casos(dest, t: pd.DataFrame, alto: int = 520) -> None:
-    fondo = {"Rojo": "#fff1f0", "Amarillo": "#fffbe6", "Verde": "#f6ffed"}
-    texto = {"Rojo": "#cf1322", "Amarillo": "#d48806", "Verde": "#389e0d"}
-    sty = (t.style
-           .map(lambda v: f"background-color:{fondo.get(v, '')};color:{texto.get(v, '')};font-weight:600",
-                subset=["Semáforo"])
-           .format({"Mín. antes": "{:.1f}", "Mín. después": "{:.1f}", "Cambio mín.": "{:+.1f}",
-                    "Máx. antes": "{:.1f}", "Máx. después": "{:.1f}", "Cambio máx.": "{:+.1f}"}, na_rep=""))
-    dest.dataframe(
-        sty, width=ANCHO, hide_index=True, height=alto,
-        column_config={
-            "Señales": st.column_config.ProgressColumn("Señales", min_value=0, max_value=6, format="%d",
-                                                       width="small"),
-            "¿Por qué?": st.column_config.TextColumn("¿Por qué?", width="large"),
-            "Pedido el": st.column_config.DatetimeColumn("Pedido el", format="DD/MM/YYYY HH:mm"),
-            "Autorizado el": st.column_config.DatetimeColumn("Autorizado el", format="DD/MM/YYYY HH:mm"),
-        },
-    )
+# umbrales de intensidad (los mismos que usan las señales)
+FUERZA = {"mín": (3, U["u_dmin"]), "máx": (10, U["u_dmax"])}
+TONOS = {  # (fondo, texto) por intensidad: leve, media, fuerte
+    "sube": [("#f6ffed", "#389e0d"), ("#b7eb8f", "#135200"), ("#389e0d", "#ffffff")],
+    "baja": [("#fff1f0", "#cf1322"), ("#ffa39e", "#820014"), ("#cf1322", "#ffffff")],
+}
+
+
+def celda_cambio(v: float, cual: str) -> str:
+    if pd.isna(v):
+        return "<td></td>"
+    if v == 0:
+        return "<td class='num' style='color:rgba(0,0,0,.35)'>0</td>"
+    medio, fuerte = FUERZA[cual]
+    nivel = 2 if abs(v) >= fuerte else 1 if abs(v) >= medio else 0
+    fondo, txt = TONOS["sube" if v > 0 else "baja"][nivel]
+    flecha = "arrow_upward" if v > 0 else "arrow_downward"
+    return (f"<td class='num cambio' style='background:{fondo};color:{txt}'>"
+            f"{ic(flecha, txt, 14)}{v:+.1f}</td>")
+
+
+def celda_despues(antes: float, despues: float) -> str:
+    if pd.isna(despues):
+        return "<td></td>"
+    color = "#389e0d" if despues > antes else "#cf1322" if despues < antes else "rgba(0,0,0,.88)"
+    return f"<td class='num' style='color:{color};font-weight:600'>{despues:.1f}</td>"
+
+
+def mostrar_casos(dest, t: pd.DataFrame, alto: int = 700) -> None:
+    """Tabla HTML: '¿Por qué?' en varias líneas y cambios de margen en verde (sube) / rojo (baja)."""
+    chip = {"Rojo": ("#fff1f0", "#cf1322", "#ffa39e"), "Amarillo": ("#fffbe6", "#d48806", "#ffe58f"),
+            "Verde": ("#f6ffed", "#389e0d", "#b7eb8f")}
+
+    def fecha(f) -> str:
+        return "" if pd.isna(f) else f.strftime("%d/%m/%Y %H:%M")
+
+    filas = []
+    for _, r in t.iterrows():
+        fo, tx, bo = chip.get(r["Semáforo"], ("#fff", "#000", "#ddd"))
+        razones = "".join(f"<div class='rz'>{ic('flag', tx, 13)}<span>{escape(z)}</span></div>"
+                          for z in str(r["¿Por qué?"]).split(" · ") if z)
+        n_sen = int(r["Señales"])
+        filas.append(
+            "<tr>"
+            f"<td><span class='chip-sem' style='background:{fo};color:{tx};border-color:{bo}'>{r['Semáforo']}</span>"
+            f"<div class='sub'>{n_sen} {'señal' if n_sen == 1 else 'señales'}</div></td>"
+            f"<td class='porque'>{razones}</td>"
+            f"<td class='prod'><b>{escape(str(r['Producto']))}</b>"
+            f"<div class='sub'>{escape(str(r['Inventario']))}</div></td>"
+            f"<td class='num sep'>{r['Mín. antes']:.1f}</td>{celda_despues(r['Mín. antes'], r['Mín. después'])}"
+            f"{celda_cambio(r['Cambio mín.'], 'mín')}"
+            f"<td class='num sep'>{r['Máx. antes']:.1f}</td>{celda_despues(r['Máx. antes'], r['Máx. después'])}"
+            f"{celda_cambio(r['Cambio máx.'], 'máx')}"
+            f"<td class='sep'>{escape(str(r['Autorizó']))}"
+            f"<div class='sub'>Pidió: {escape(str(r['Pidió']))}</div></td>"
+            f"<td class='fechas'>Pedido: {fecha(r['Pedido el'])}<div class='sub'>Autorizado: {fecha(r['Autorizado el'])}"
+            f"</div><div class='sub'>Tardó: {r['Tardó']}</div></td>"
+            f"<td>{escape(str(r['Región']))}<div class='sub'>{escape(str(r['Unidad']))}</div></td>"
+            f"<td>{escape(str(r['Folio']))}<div class='sub'>{r['Mes']}</div></td>"
+            "</tr>")
+    cab = ("<tr><th rowspan='2'>Semáforo</th><th rowspan='2'>¿Por qué?</th><th rowspan='2'>Producto</th>"
+           "<th colspan='3' class='grp sep'>Margen mínimo</th><th colspan='3' class='grp sep'>Margen máximo</th>"
+           "<th rowspan='2' class='sep'>Autorizó</th><th rowspan='2'>Fechas</th>"
+           "<th rowspan='2'>Región / unidad</th><th rowspan='2'>Folio / mes</th></tr>"
+           "<tr><th class='num sep'>Antes</th><th class='num'>Después</th><th class='num'>Cambio</th>"
+           "<th class='num sep'>Antes</th><th class='num'>Después</th><th class='num'>Cambio</th></tr>")
+    html(f"<div class='tabla-casos' style='max-height:{alto}px'><table><thead>{cab}</thead>"
+         f"<tbody>{''.join(filas)}</tbody></table></div>", dest)
+
+
+def leyenda_cambios() -> str:
+    m1, f1 = FUERZA["mín"]
+    m2, f2 = FUERZA["máx"]
+    s, b = TONOS["sube"], TONOS["baja"]
+
+    def caja(fo: str, tx: str, t_: str) -> str:
+        return f"<span class='chip-c' style='background:{fo};color:{tx}'>{t_}</span>"
+
+    return (
+        "<div class='ley-cambios'><b>Colores de la columna Cambio:</b> "
+        "<b style='color:#389e0d'>verde = el margen subió</b> · <b style='color:#cf1322'>rojo = el margen bajó</b>"
+        " · entre más fuerte el color, más grande el cambio.<br>"
+        f"{caja(*s[0], 'Subió poco')}{caja(*s[1], 'Subió medio')}{caja(*s[2], 'Subió mucho')}&nbsp;&nbsp;"
+        f"{caja(*b[0], 'Bajó poco')}{caja(*b[1], 'Bajó medio')}{caja(*b[2], 'Bajó mucho')}<br>"
+        f"<span style='color:rgba(0,0,0,.45)'>Mínimo: medio desde {m1:g} pts, mucho desde {f1:g} pts · "
+        f"Máximo: medio desde {m2:g} pts, mucho desde {f2:g} pts</span></div>")
 
 
 def pagina_casos() -> None:
@@ -1052,13 +1142,13 @@ def pagina_casos() -> None:
 
     seccion("Lista de casos")
     cont = card(f"Rojo: 3 o más señales · {len(rojo):,} cambios (revisar primero)", "error")
-    html("<div class='nota' style='min-height:0'>Ordenados del que tiene más señales al que tiene menos. "
-         "Desliza a la derecha para ver todos los datos del cambio.</div>", cont)
-    mostrar_casos(cont, tabla_casos(rojo), alto=min(520, 38 * (len(rojo) + 1) + 4))
+    html("<div class='nota' style='min-height:0'>Ordenados del que tiene más señales al que tiene menos.</div>"
+         + leyenda_cambios(), cont)
+    mostrar_casos(cont, tabla_casos(rojo))
     cont = card(f"Amarillo: 1 o 2 señales · {len(amarillo):,} cambios (conviene preguntar)", "warning")
     html("<div class='nota' style='min-height:0'>Ordenados del que tiene más señales al que tiene menos. "
-         "Desliza hacia abajo y a la derecha para ver todos.</div>", cont)
-    mostrar_casos(cont, tabla_casos(amarillo), alto=560)
+         "Desliza hacia abajo dentro de la tabla para ver todos.</div>" + leyenda_cambios(), cont)
+    mostrar_casos(cont, tabla_casos(amarillo))
     st.download_button("Descargar la lista en Excel (amarillo y rojo)", icon=":material/download:",
                        data=casos_excel(), file_name="casos_a_revisar.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -1074,6 +1164,24 @@ def casos_excel() -> bytes:
             t.to_excel(xw, sheet_name=nombre, index=False)
             ws = xw.book[nombre]
             ws.freeze_panes = "A2"
+            from openpyxl.styles import Alignment, Font, PatternFill
+            col_pq = list(t.columns).index("¿Por qué?") + 1
+            for (cual, nombre_col) in [("mín", "Cambio mín."), ("máx", "Cambio máx.")]:
+                ci = list(t.columns).index(nombre_col) + 1
+                medio, fuerte = FUERZA[cual]
+                for fila in range(2, len(t) + 2):
+                    celda = ws.cell(fila, ci)
+                    v = celda.value
+                    if v is None or v == 0 or pd.isna(v):
+                        continue
+                    nivel = 2 if abs(v) >= fuerte else 1 if abs(v) >= medio else 0
+                    fondo, txt = TONOS["sube" if v > 0 else "baja"][nivel]
+                    celda.fill = PatternFill("solid", fgColor=fondo.lstrip("#"))
+                    celda.font = Font(bold=True, color=txt.lstrip("#"))
+            for fila in range(2, len(t) + 2):
+                c_ = ws.cell(fila, col_pq)
+                c_.value = str(c_.value or "").replace(" · ", "\n")
+                c_.alignment = Alignment(wrap_text=True, vertical="top")
             ws.auto_filter.ref = ws.dimensions
             for col in ws.columns:
                 ws.column_dimensions[col[0].column_letter].width = min(
