@@ -458,6 +458,13 @@ header[data-testid="stHeader"]{background:#ffffff;box-shadow:0 1px 4px rgba(0,21
 .ley-cambios{font-size:12.5px;color:rgba(0,0,0,.65);margin:2px 0 6px;line-height:2}
 .chip-c{display:inline-block;padding:0 8px;border-radius:4px;font-weight:600;font-size:12px;margin-right:4px;
   line-height:20px}
+.hist{margin:4px 0 6px 19px;padding:8px 10px;background:#f5f9ff;border:1px solid #d6e4ff;border-radius:6px;
+  font-size:12.5px}
+.hist-paso{display:flex;gap:8px;align-items:flex-start;padding:3px 0;line-height:1.35}
+.hist-n{width:18px;height:18px;border-radius:50%;background:#1677ff;color:#fff;font-size:11px;font-weight:600;
+  display:grid;place-items:center;flex-shrink:0;margin-top:2px}
+.hist .sub{margin:0}
+.hist-pie{margin-top:5px;padding-top:5px;border-top:1px dashed #d6e4ff;color:rgba(0,0,0,.65)}
 </style>
 """
 
@@ -678,6 +685,12 @@ def preparar(df_: pd.DataFrame) -> pd.DataFrame:
     d_["Producto"] = d_["DESCRIPCION DEL PRODUCTO"].str.title()
     d_["Revisar"] = np.select([d_["Núm. alertas"] >= 3, d_["Núm. alertas"] >= 1],
                               [ROJO_TXT, AMARILLO_TXT], VERDE_TXT)
+    # cambio anterior del mismo producto en la misma U.O. e inventario (para "cambio repetido")
+    g = d_.sort_values("FCHSOL").groupby("Clave producto-UO")
+    for col in ["SCMARMINACT", "SCMARMINSOL", "SCMARMAXACT", "SCMARMAXSOL", "FCHSOL", "FCHAUT", "Autorizó",
+                "SCFOLIO"]:
+        d_[f"Prev {col}"] = g[col].shift()
+    d_["Horas entre rango 2 y 3"] = (d_["FCHAUT"] - d_["Prev FCHAUT"]).dt.total_seconds() / 3600
     return d_
 
 
@@ -1010,7 +1023,69 @@ def tabla_casos(r: pd.DataFrame) -> pd.DataFrame:
         "Mín. antes": r["SCMARMINACT"], "Mín. después": r["SCMARMINSOL"], "Cambio mín.": r["Cambio mín."],
         "Máx. antes": r["SCMARMAXACT"], "Máx. después": r["SCMARMAXSOL"], "Cambio máx.": r["Cambio máx."],
     })
+    # historial de los 3 rangos cuando el producto se volvió a cambiar en pocos días
+    rep = r["Cambio repetido"] & r["Prev SCMARMINSOL"].notna()
+    rango = lambda mn, mx: f"mín {mn:.1f} / máx {mx:.1f}"  # noqa: E731
+    t["Rango 1 (original)"] = np.where(rep, [rango(a, b) for a, b in zip(r["Prev SCMARMINACT"],
+                                                                          r["Prev SCMARMAXACT"])], "")
+    t["Rango 2 (cambio anterior)"] = np.where(rep, [rango(a, b) for a, b in zip(r["Prev SCMARMINSOL"],
+                                                                                 r["Prev SCMARMAXSOL"])], "")
+    t["Rango 3 (este cambio)"] = np.where(rep, [rango(a, b) for a, b in zip(r["SCMARMINSOL"],
+                                                                             r["SCMARMAXSOL"])], "")
+    t["Cambio anterior autorizado el"] = r["Prev FCHAUT"].where(rep)
+    t["Folio del cambio anterior"] = r["Prev SCFOLIO"].where(rep, "")
+    t["Tiempo del rango 2 al 3"] = r["Horas entre rango 2 y 3"].where(rep).map(tiempo_txt)
+    mn_ok = r["SCMARMINSOL"] == r["Prev SCMARMINACT"]
+    mx_ok = r["SCMARMAXSOL"] == r["Prev SCMARMAXACT"]
+    mn_mov = r["Prev SCMARMINSOL"] != r["Prev SCMARMINACT"]  # el cambio anterior sí movió el mínimo
+    mx_mov = r["Prev SCMARMAXSOL"] != r["Prev SCMARMAXACT"]
+    t["¿Regresó al rango original?"] = np.where(rep, np.select(
+        [mn_ok & mx_ok, mx_ok & mx_mov, mn_ok & mn_mov],
+        ["Sí, los dos márgenes", "Solo el máximo", "Solo el mínimo"], "No"), "")
+    t["_rep"] = rep
+    t["_r1"] = list(zip(r["Prev SCMARMINACT"], r["Prev SCMARMAXACT"]))
+    t["_r2"] = list(zip(r["Prev SCMARMINSOL"], r["Prev SCMARMAXSOL"]))
+    t["_r3"] = list(zip(r["SCMARMINSOL"], r["SCMARMAXSOL"]))
     return t.sort_values(["Señales", "Cambio máx."], ascending=False)
+
+
+def tiempo_txt(h: float) -> str:
+    if pd.isna(h):
+        return ""
+    if h < 1:
+        return f"{h * 60:.0f} minutos"
+    if h < 48:
+        return f"{h:.0f} horas"
+    return f"{h / 24:.0f} días"
+
+
+def historial_html(r) -> str:
+    """Los 3 rangos (original → cambio anterior → este cambio) y cuánto tardó en pasar al 3º."""
+    def val(nuevo: float, viejo: float, etiqueta: str) -> str:
+        c_ = "#389e0d" if nuevo > viejo else "#cf1322" if nuevo < viejo else "rgba(0,0,0,.88)"
+        f_ = (ic("arrow_upward", c_, 12) if nuevo > viejo else ic("arrow_downward", c_, 12) if nuevo < viejo
+              else "")
+        return f"{etiqueta} <b style='color:{c_}'>{f_}{nuevo:.1f}</b>"
+
+    (a1, b1), (a2, b2), (a3, b3) = r["_r1"], r["_r2"], r["_r3"]
+    fecha_ant = r["Cambio anterior autorizado el"]
+    fecha_ant = "" if pd.isna(fecha_ant) else fecha_ant.strftime("%d/%m/%Y")
+    fecha_act = "" if pd.isna(r["Autorizado el"]) else r["Autorizado el"].strftime("%d/%m/%Y")
+    regreso = r["¿Regresó al rango original?"]
+    return (
+        "<div class='hist'>"
+        f"<div class='hist-paso'><span class='hist-n'>1</span><div><span class='sub'>Rango original</span><br>"
+        f"mín <b>{a1:.1f}</b> · máx <b>{b1:.1f}</b></div></div>"
+        f"<div class='hist-paso'><span class='hist-n'>2</span><div><span class='sub'>Cambio anterior · {fecha_ant}"
+        f"</span><br>{val(a2, a1, 'mín')} · {val(b2, b1, 'máx')}</div></div>"
+        f"<div class='hist-paso'><span class='hist-n'>3</span><div><span class='sub'>Este cambio · {fecha_act}"
+        f"</span><br>{val(a3, a2, 'mín')} · {val(b3, b2, 'máx')}</div></div>"
+        f"<div class='hist-pie'>{ic('schedule', None, 13)} Del rango 2 al 3 pasaron "
+        f"<b>{r['Tiempo del rango 2 al 3']}</b>"
+        + {"Sí, los dos márgenes": " · <b style='color:#cf1322'>regresó al rango original</b>",
+           "Solo el máximo": " · <b style='color:#cf1322'>el máximo regresó a su valor original</b>",
+           "Solo el mínimo": " · <b style='color:#cf1322'>el mínimo regresó a su valor original</b>"}.get(regreso, "")
+        + "</div></div>")
 
 
 # umbrales de intensidad (los mismos que usan las señales)
@@ -1052,8 +1127,10 @@ def mostrar_casos(dest, t: pd.DataFrame, alto: int = 700) -> None:
     filas = []
     for _, r in t.iterrows():
         fo, tx, bo = chip.get(r["Semáforo"], ("#fff", "#000", "#ddd"))
-        razones = "".join(f"<div class='rz'>{ic('flag', tx, 13)}<span>{escape(z)}</span></div>"
-                          for z in str(r["¿Por qué?"]).split(" · ") if z)
+        razones = "".join(
+            f"<div class='rz'>{ic('flag', tx, 13)}<span>{escape(z)}</span></div>"
+            + (historial_html(r) if z == EXPLICA["Cambio repetido"] and r["_rep"] else "")
+            for z in str(r["¿Por qué?"]).split(" · ") if z)
         n_sen = int(r["Señales"])
         filas.append(
             "<tr>"
@@ -1160,7 +1237,7 @@ def casos_excel() -> bytes:
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as xw:
         for nombre, sub in [("Rojo", r[r["Revisar"] == ROJO_TXT]), ("Amarillo", r[r["Revisar"] == AMARILLO_TXT])]:
-            t = tabla_casos(sub)
+            t = tabla_casos(sub).drop(columns=["_rep", "_r1", "_r2", "_r3"])
             t.to_excel(xw, sheet_name=nombre, index=False)
             ws = xw.book[nombre]
             ws.freeze_panes = "A2"
