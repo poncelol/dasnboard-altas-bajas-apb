@@ -291,7 +291,7 @@ DETALLE_COLS = {
     "SCMARMAXSOL": "Máx. solicitado", "Cambio máx.": "Cambio máx.", "DETERMINACION_MAX": "Determinación máx.",
     "Núm. alertas": "Núm. alertas", "Alertas": "Alertas",
     "Franja mín.": "Franja del mínimo (política 10–15%)", "Máximo vs. política": "Máximo vs. política (15%)",
-    "Dirección política": "¿Se acerca o se aleja de la política?", "Señales de política": "Señales de política",
+    "Rango política": "¿Mínimo dentro del rango (10–15%)?", "Señales de política": "Señales de política",
 }
 
 
@@ -1020,6 +1020,8 @@ MAX_OK, MAX_ARRIBA = f"Máximo en {POL_MAX:g}% o menos", f"Máximo arriba de {PO
 COLORES_MAXPOL = {MAX_OK: VERDE, MAX_ARRIBA: NARANJA}
 D_ACERCA, D_ALEJA, D_IGUAL = "Se acerca a la política", "Se aleja de la política", "Queda igual de lejos"
 COLORES_DIR = {D_ACERCA: VERDE, D_ALEJA: ROJO, D_IGUAL: GRIS}
+R_DENTRO, R_FUERA = f"Dentro del rango ({POL_TXT})", "Fuera del rango"
+COLORES_RANGO = {R_DENTRO: VERDE, R_FUERA: ROJO}
 
 SEÑALES_POL = {
     "Mínimo abajo del costo": "El mínimo autorizado es menor a 0%: se permite vender por debajo del costo.",
@@ -1060,6 +1062,10 @@ def politica(d_: pd.DataFrame) -> pd.DataFrame:
     dd = d_["Distancia a la política después"] - d_["Distancia a la política antes"]
     d_["Cambio de distancia"] = dd  # positivo = se alejó de la política; negativo = se acercó
     d_["Dirección política"] = np.select([dd < -EPS, dd > EPS], [D_ACERCA, D_ALEJA], D_IGUAL)
+    # ¿el mínimo autorizado quedó dentro del rango de la política (10% a 15%)?
+    d_["Puntos fuera del rango"] = fuera(d_["SCMARMINSOL"])
+    d_["Rango política"] = np.where(d_["SCMARMINSOL"].notna() & (d_["Puntos fuera del rango"] <= EPS),
+                                    R_DENTRO, R_FUERA)
     # mínimo típico del producto: mediana del último mínimo autorizado en cada unidad/inventario
     ult = d_.sort_values("FCHAUT").groupby("Clave producto-UO").tail(1)
     tip = ult.groupby("CVE. DE PRODUCTO")["SCMARMINSOL"].agg(["median", "size"])
@@ -1824,30 +1830,32 @@ def tabla_casos_html(dest, r: pd.DataFrame) -> None:
                busca=busca_casos(vis), sugerencias=sug_casos(vis, "Señales de política"))
 
 
-def tabla_direccion_html(dest, r: pd.DataFrame, direccion: str) -> None:
-    """Cambios que se acercan / se alejan / quedan igual de lejos de la política, con todos sus datos."""
-    if direccion == D_ALEJA:
-        r = r.sort_values("Cambio de distancia", ascending=False)  # los que más se alejaron primero
-    elif direccion == D_ACERCA:
-        r = r.sort_values("Cambio de distancia")  # los que más se acercaron primero
+def tabla_rango_html(dest, r: pd.DataFrame, dentro: bool) -> None:
+    """Cambios con el mínimo dentro / fuera del rango de la política (10% a 15%), con todos sus datos."""
+    if dentro:
+        r = r.sort_values("FCHAUT", ascending=False)  # los más recientes primero
     else:
-        r = r.sort_values("FCHAUT", ascending=False)
-    cab = [("Distancia a la política", "antes → después", True), ("Producto", "", False),
+        r = r.sort_values(["Puntos fuera del rango", "FCHAUT"], ascending=False)  # los más fuera primero
+    cab = [("Mínimo autorizado", "¿qué tan fuera del rango?", True), ("Producto", "", False),
            ("Región / unidad", "", False), ("Mínimo", "antes → después", True), ("Máximo", "antes → después", True),
-           ("Franja del mínimo", "", False), ("Otras señales", "de política", False),
+           ("Franja del mínimo", "", False), ("Señales", "de política", False),
            ("Autorizó / pidió", "", False), ("Fecha / folio", "", False)]
     filas = []
     for _, f in r.head(MAX_FILAS).iterrows():
-        dd = f["Cambio de distancia"]
-        c_ = "#cf1322" if dd > EPS else "#389e0d" if dd < -EPS else TEXTO_2
-        otras = [z for z in str(f["Señales de política"]).split(" · ") if z and z != D_ALEJA]
+        pf = f["Puntos fuera del rango"]
+        mn = f["SCMARMINSOL"]
+        if dentro:
+            detalle = f"<div class='sub' style='color:#389e0d'>dentro de {POL_TXT}</div>"
+        else:
+            lado = f"abajo de {POL_MIN:g}%" if mn < POL_MIN else f"arriba de {POL_MAX:g}%"
+            detalle = f"<div class='sub' style='color:#cf1322'>{num(pf)} pts {lado}</div>"
+        c_ = "#389e0d" if dentro else "#cf1322"
+        señales = [z for z in str(f["Señales de política"]).split(" · ") if z]
         razones = ("".join(f"<div class='rz'>{ic('flag', '#d48806', 13)}<span>{escape(z)}</span></div>"
-                           for z in otras) or f"<span style='color:{TEXTO_2}'>Ninguna</span>")
+                           for z in señales) or f"<span style='color:{TEXTO_2}'>Ninguna</span>")
         fr = COLORES_FRANJA.get(f["Franja mín."], GRIS)
         filas.append(
-            f"<tr><td class='num'><span class='antes'>{num(f['Distancia a la política antes'])}</span> → "
-            f"<b style='color:{c_}'>{num(f['Distancia a la política después'])}</b>"
-            f"<div class='sub' style='color:{c_}'>{'+' if dd > 0 else ''}{num(dd)} pts</div></td>"
+            f"<tr><td class='num'><b style='color:{c_}'>{num(mn)}%</b>{detalle}</td>"
             f"<td class='prod'><b>{escape(str(f['Producto']))}</b><div class='sub'>"
             f"{escape(str(f['Inventario (corto)']))} · {escape(str(f['Tipo de cambio']))}</div></td>"
             f"<td>{escape(str(f['NOMBRE DE UNIDAD OP.']).title())}<div class='sub'>{escape(str(f['Región']))}</div></td>"
@@ -1863,13 +1871,11 @@ def tabla_direccion_html(dest, r: pd.DataFrame, direccion: str) -> None:
                busca=busca_casos(vis), sugerencias=sug_casos(vis, "Señales de política"))
 
 
-def tabla_direccion(r: pd.DataFrame) -> pd.DataFrame:
-    """Versión para Excel del listado de cambios que se acercan / se alejan de la política."""
+def tabla_rango(r: pd.DataFrame) -> pd.DataFrame:
+    """Versión para Excel del listado de cambios con el mínimo dentro / fuera del rango de la política."""
     return pd.DataFrame({
-        "¿Se acerca o se aleja de la política?": r["Dirección política"],
-        "Distancia a la política antes": r["Distancia a la política antes"].round(2),
-        "Distancia a la política después": r["Distancia a la política después"].round(2),
-        "Cambio de distancia (pts)": r["Cambio de distancia"].round(2),
+        "¿Mínimo dentro del rango?": r["Rango política"],
+        "Puntos fuera del rango": r["Puntos fuera del rango"].round(2),
         "Producto": r["Producto"], "Cve. producto": r["CVE. DE PRODUCTO"], "Inventario": r["Inventario (corto)"],
         "Tipo de cambio": r["Tipo de cambio"], "Región": r["Región"],
         "Unidad": r["NOMBRE DE UNIDAD OP."].str.title(),
@@ -1878,7 +1884,7 @@ def tabla_direccion(r: pd.DataFrame) -> pd.DataFrame:
         "Franja del mínimo": r["Franja mín."], "Señales de política": r["Señales de política"],
         "Autorizó": r["Autorizó"], "Pidió": r["Solicitó"], "Pedido el": r["FCHSOL"], "Autorizado el": r["FCHAUT"],
         "Folio": r["SCFOLIO"], "Mes": r["Mes"].map(mes_largo),
-    }).sort_values(["¿Se acerca o se aleja de la política?", "Cambio de distancia (pts)"], ascending=[False, False])
+    }).sort_values(["¿Mínimo dentro del rango?", "Puntos fuera del rango"], ascending=[False, False])
 
 
 def tabla_ventanas_html(dest, tv: pd.DataFrame) -> None:
@@ -1987,12 +1993,12 @@ def pagina_politica() -> None:
                 nota=f"Un máximo arriba de {POL_MAX:g}% permite poner precios más altos que la política, con riesgo de "
                      "quedar más caro que la competencia.")
 
-    seccion("¿Los cambios corrigen o empeoran el rango?")
+    seccion("¿El mínimo quedó dentro del rango?")
     c = st.columns(2, gap="medium")
-    card_pastel(c[0], "¿Se acerca o se aleja de la política?", "call_split", x["Dirección política"], COLORES_DIR,
-                nota=f"Se mide cuánto se sale el rango de la política ({POL_TXT}): lo que el mínimo queda fuera más "
-                     f"lo que el máximo queda fuera, antes y después del cambio. Ejemplo: bajar el mínimo de 17 a 16 "
-                     f"<b>se acerca</b>; bajarlo de 12 a 5 <b>se aleja</b>.")
+    card_pastel(c[0], f"¿El mínimo quedó dentro del rango ({POL_TXT})?", "rule", x["Rango política"],
+                COLORES_RANGO,
+                nota=f"<b>Dentro</b> = el mínimo autorizado quedó entre {POL_MIN:g}% y {POL_MAX:g}%. <b>Fuera</b> = "
+                     f"quedó abajo de {POL_MIN:g}% o arriba de {POL_MAX:g}%.")
     orden_f = [k for k in COLORES_FRANJA]
     ad = (pd.concat([x["Franja mín. antes"].value_counts().rename("Antes del cambio"),
                      x["Franja mín."].value_counts().rename("Después del cambio")], axis=1)
@@ -2010,41 +2016,37 @@ def pagina_politica() -> None:
          "<b>bajando</b> los mínimos por debajo de la política.</div>", cont)
     mostrar(estilo(fig, 400), cont)
 
-    cont = card("¿Cuáles son? Listado de los cambios que se acercan o se alejan de la política", "list_alt")
-    html(f"""<div class='nota' style='min-height:0'>Cada pestaña tiene sus cambios con todos los datos.
-        <b>Distancia a la política</b> = cuántos puntos se sale el rango de la banda {POL_TXT}: lo que el mínimo
-        queda fuera más lo que el máximo queda fuera. Ejemplo: un rango de 5 a 25 está a 5 + 10 =
-        <b>15 puntos</b>; uno de {POL_MIN:g} a {POL_MAX:g} está a <b>0</b>.
-        Abajo dice cuánto cambió con este movimiento: <b style='color:#cf1322'>+ = se alejó</b>,
-        <b style='color:#389e0d'>− = se acercó</b>. <b>Se alejan</b> va del que más se alejó al que menos;
-        <b>Se acercan</b>, del que más se acercó al que menos. <b>Otras señales</b> muestra las demás señales de
-        política que tiene el cambio.</div>""", cont)
-    grupos = [(D_ALEJA, "Se alejan", "call_split"), (D_ACERCA, "Se acercan", "call_merge"),
-              (D_IGUAL, "Quedan igual", "drag_handle")]
-    pestañas = cont.tabs([f":material/{i}: {t} ({int((x['Dirección política'] == d_).sum()):,})"
-                          for d_, t, i in grupos])
-    for p_, (d_, t, _) in zip(pestañas, grupos):
-        sub = x[x["Dirección política"] == d_]
+    cont = card(f"¿Cuáles son? Listado de los cambios dentro y fuera del rango ({POL_TXT})", "list_alt")
+    html(f"""<div class='nota' style='min-height:0'>Cada pestaña tiene sus cambios con todos los datos, según
+        dónde quedó el <b>mínimo autorizado</b>. <b>Dentro del rango</b> = entre {POL_MIN:g}% y {POL_MAX:g}%,
+        del más reciente al más viejo. <b>Fuera del rango</b> = abajo de {POL_MIN:g}% o arriba de {POL_MAX:g}%,
+        del que más se sale al que menos; abajo del mínimo dice cuántos puntos se sale y hacia qué lado.
+        <b>Señales</b> muestra las señales de política que tiene el cambio.</div>""", cont)
+    grupos = [(R_FUERA, "Fuera del rango", "cancel", False), (R_DENTRO, "Dentro del rango", "check_circle", True)]
+    pestañas = cont.tabs([f":material/{i}: {t} ({int((x['Rango política'] == r_).sum()):,})"
+                          for r_, t, i, _ in grupos])
+    for p_, (r_, t, _, dentro) in zip(pestañas, grupos):
+        sub = x[x["Rango política"] == r_]
         if sub.empty:
-            html(f"<div class='nota'>No hay cambios que {t.lower()}.</div>", p_)
+            html(f"<div class='nota'>No hay cambios {t.lower()}.</div>", p_)
         else:
-            tabla_direccion_html(p_, sub, d_)
+            tabla_rango_html(p_, sub, dentro)
 
-    orden_m =[mes_corto(m) for m in sorted(x["Mes"].unique())]
-    pm = x.groupby(["Mes", "Mes (texto)", "Dirección política"]).size().reset_index(name="Cambios")
+    orden_m = [mes_corto(m) for m in sorted(x["Mes"].unique())]
+    pm = x.groupby(["Mes", "Mes (texto)", "Rango política"]).size().reset_index(name="Cambios")
     pm["%"] = 100 * pm["Cambios"] / pm.groupby("Mes")["Cambios"].transform("sum")
-    fig = px.bar(pm, x="Mes (texto)", y="%", color="Dirección política", color_discrete_map=COLORES_DIR,
+    fig = px.bar(pm, x="Mes (texto)", y="%", color="Rango política", color_discrete_map=COLORES_RANGO,
                  custom_data=["Cambios"], category_orders={"Mes (texto)": orden_m,
-                                                           "Dirección política": list(COLORES_DIR)})
+                                                           "Rango política": list(COLORES_RANGO)})
     fig.update_traces(texttemplate="%{y:.0f}%", textposition="inside", marker_cornerradius=4,
                       hovertemplate="%{x}: %{y:.0f}% (%{customdata[0]:,} cambios)<extra></extra>")
     fig.update_yaxes(title="% de los cambios del mes", ticksuffix="%", range=[0, 100])
     fig.update_xaxes(title="")
-    cont = card("Mes a mes: ¿se corrige o se empeora?", "bar_chart")
-    pa = pm[pm["Dirección política"] == D_ALEJA].set_index("Mes")["%"]
-    html(f"<div class='nota'>El mes en que más cambios se alejaron de la política fue "
+    cont = card("Mes a mes: ¿el mínimo quedó dentro o fuera del rango?", "bar_chart")
+    pa = pm[pm["Rango política"] == R_FUERA].set_index("Mes")["%"]
+    html(f"<div class='nota'>El mes con más mínimos fuera del rango fue "
          f"<b>{mes_largo(pa.idxmax())}</b> ({pa.max():.0f}% de sus cambios).</div>" if not pa.empty else
-         "<div class='nota'>Ningún cambio se alejó de la política.</div>", cont)
+         "<div class='nota'>Todos los mínimos quedaron dentro del rango.</div>", cont)
     mostrar(estilo(fig, 340), cont)
 
     seccion("Señales de posible mala práctica")
@@ -2151,7 +2153,7 @@ def politica_excel() -> bytes:
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as xw:
         for nombre, t in [("Casos con señal", tabla_casos_pol(x[x["Núm. señales política"] > 0])),
-                          ("Se acercan o se alejan", tabla_direccion(x)),
+                          ("Dentro o fuera del rango", tabla_rango(x)),
                           ("Ventanas de precio bajo", tabla_ventanas(x)),
                           ("Fuera de lo normal", tabla_atipicos(x)),
                           ("Por autorizador", tabla_pol(x, "Autorizó", unidad="Unidad donde más autorizó")),
