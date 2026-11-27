@@ -466,6 +466,50 @@ header[data-testid="stHeader"]{background:#ffffff;box-shadow:0 1px 4px rgba(0,21
 .hist-n{width:18px;height:18px;border-radius:50%;background:#1677ff;color:#fff;font-size:11px;font-weight:600;
   display:grid;place-items:center;flex-shrink:0;margin-top:2px}
 .hist .sub{margin:0}
+/* buscador de listas */
+.stElementContainer:has(> [data-testid="stHtml"] > script:only-child){display:none}
+.buscable [hidden]{display:none!important}
+.buscador{--acento:#1677ff;--acento-rgb:22 119 255;--borde:#d9d9d9;--linea:#f0f0f0;--tenue:rgba(0,0,0,.45);
+  position:relative;display:flex;align-items:center;gap:8px;margin:6px 0 10px;padding:7px 12px;background:#fff;
+  border:1px solid var(--borde);border-radius:8px;color:var(--tenue);transition:border-color .2s,box-shadow .2s}
+.buscador:hover{border-color:#4096ff}
+.buscador:focus-within{border-color:var(--acento);box-shadow:0 0 0 2px rgba(5,145,255,.1)}
+.buscador input{flex:1;min-width:0;border:none;outline:none;background:transparent;font-size:14px;
+  color:rgba(0,0,0,.88);caret-color:var(--acento)}
+.buscador input::placeholder{color:var(--tenue);opacity:1}
+.buscador .cuenta{font-size:12px;white-space:nowrap;color:var(--acento);font-weight:600}
+.buscador .sugerencias{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:30;list-style:none;margin:0;
+  padding:6px;max-height:340px;overflow-y:auto;background:#fff;border:1px solid var(--borde);border-radius:10px;
+  box-shadow:0 12px 32px rgb(0 0 0 / .16);outline:none}
+.buscador .sugerencias li{display:flex;align-items:center;gap:8px;margin:0;padding:6px 8px;border-radius:6px;
+  font-size:13px;color:rgba(0,0,0,.88)}
+.buscador .sugerencias[hidden],.buscador .sugerencias li[hidden]{display:none}
+.buscador .sugerencias li.grupo{position:sticky;top:-6px;z-index:1;margin-top:6px;padding:9px 8px 5px;background:#fff;
+  border-top:1px solid var(--linea);border-radius:0;font-size:11px;font-weight:700;color:var(--tenue);
+  text-transform:uppercase;letter-spacing:.06em;cursor:default}
+.buscador .sugerencias li.grupo.primero{margin-top:0;border-top:none}
+.buscador .sugerencias li.grupo .msi{color:var(--acento)}
+.buscador .sugerencias li.grupo b{flex:1;font-weight:700}
+.buscador .sugerencias li.grupo em{font-style:normal;font-weight:600;text-transform:none;letter-spacing:0;
+  color:var(--acento);background:rgb(var(--acento-rgb) / .1);border-radius:999px;padding:1px 8px}
+.buscador .sugerencias li.op{padding-left:31px;cursor:pointer}
+.buscador .sugerencias li.op span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.buscador .sugerencias li.op small{font-size:11.5px;color:var(--tenue);white-space:nowrap}
+.buscador .sugerencias li.op:hover,.buscador .sugerencias li.op.activa{background:rgb(var(--acento-rgb) / .1)}
+.buscador .sugerencias li.op.activa span{color:var(--acento)}
+.buscador .sugerencias mark{background:rgb(var(--acento-rgb) / .18);color:inherit;font-weight:600;border-radius:3px;
+  padding:0 1px}
+.buscador .sugerencias li.mas{gap:6px;padding:2px 8px 6px 31px}
+.buscador .sugerencias li.mas span{font-size:12px;font-weight:600;color:var(--acento);cursor:pointer;padding:3px 10px;
+  border-radius:999px;border:1px solid rgb(var(--acento-rgb) / .35)}
+.buscador .sugerencias li.mas span:hover{background:rgb(var(--acento-rgb) / .1)}
+.buscador .sugerencias li.mas span[data-acc="menos"]{color:var(--tenue);border-color:var(--borde)}
+.buscador .sugerencias li.pie-sug{position:sticky;bottom:-6px;z-index:1;gap:14px;margin:6px -6px -6px;
+  padding:8px 14px;background:#fafafa;border-top:1px solid var(--linea);border-radius:0 0 10px 10px;font-size:11.5px;
+  color:var(--tenue);cursor:default}
+.buscador .sugerencias kbd{font-family:inherit;font-size:11px;font-weight:600;color:rgba(0,0,0,.65);background:#fff;
+  border:1px solid var(--borde);border-bottom-width:2px;border-radius:4px;padding:0 5px;margin-right:3px}
+.buscable .vacio td,.buscable .rk-fila.vacio{color:var(--tenue, rgba(0,0,0,.45));text-align:center;padding:14px}
 .tabla-pol table{min-width:0;table-layout:auto}
 .tabla-pol th{white-space:normal;height:auto;vertical-align:bottom;line-height:1.3}
 .tabla-pol th .sub{font-weight:400;white-space:normal}
@@ -507,6 +551,202 @@ def ic(nombre: str, color: str | None = None, tam: int | None = None) -> str:
 
 def html(texto: str, dest=None) -> None:
     (dest or st).markdown(re.sub(r"\n\s*", " ", texto), unsafe_allow_html=True)
+
+
+# ================================================================ buscador de listas
+# Filtra los renglones de una tabla o lista mientras se escribe: sin acentos ni mayúsculas, y cada palabra escrita
+# debe aparecer en algún lado del renglón (en cualquier orden). Al enfocar el campo se despliegan sugerencias por
+# sección (persona, región, producto, señal…) que se eligen con el mouse o con flechas + Enter.
+# st.markdown no ejecuta JavaScript: el contenido va con st.markdown y solo el script con st.html. El script escucha
+# en todo el documento, así que sirve para cualquier elemento .buscable, y cada ejecución reemplaza a la anterior.
+# Dentro del script no puede ir el signo «menor que» (st.html descarta el bloque), por eso se escribe «b > a».
+BUSCADOR_JS = """<script>
+{
+  (window.__buscadorEscuchas || []).forEach(([tipo, f]) => document.removeEventListener(tipo, f));
+  window.__buscadorEscuchas = [];
+  const escuchar = (tipo, f) => { document.addEventListener(tipo, f); window.__buscadorEscuchas.push([tipo, f]); };
+  const norm = t => t.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase().trim();
+  const entrada = e => e.target.closest && e.target.closest(".buscador input");
+  // Resalta con «mark» las palabras escritas dentro del texto original
+  const marcar = (el, texto, palabras) => {
+    let base = "";
+    const pos = [], si = new Array(texto.length).fill(false);
+    for (let i = 0; texto.length > i; i++) {
+      const c = texto[i].normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase();
+      base += c;
+      for (let k = 0; c.length > k; k++) pos.push(i);
+    }
+    palabras.forEach(p => {
+      for (let j = base.indexOf(p); j >= 0; j = base.indexOf(p, j + 1))
+        for (let k = j; j + p.length > k; k++) si[pos[k]] = true;
+    });
+    el.textContent = "";
+    for (let i = 0; texto.length > i;) {
+      let j = i;
+      while (texto.length > j && si[j] === si[i]) j++;
+      const trozo = document.createTextNode(texto.slice(i, j));
+      if (si[i]) { const m = document.createElement("mark"); m.appendChild(trozo); el.appendChild(m); }
+      else el.appendChild(trozo);
+      i = j;
+    }
+  };
+  // Sin texto se ven las primeras 3 sugerencias de cada sección; al escribir, hasta 4 de las que coinciden.
+  // «Mostrar más» suma 10 a su sección.
+  const PASO = 10;
+  const sugerir = caja => {
+    const lista = caja.parentElement.querySelector(".sugerencias");
+    if (!lista) return;
+    const extra = lista.__extra = lista.__extra || {};
+    const q = norm(caja.value), palabras = q.split(/\\s+/).filter(Boolean), base = q ? 4 : 3;
+    let total = 0, cab = null, vistos = 0, hallados = 0, primero = true, tope = base;
+    const cerrar = () => {
+      if (!cab) return;
+      cab.hidden = !vistos;
+      cab.classList.toggle("primero", primero && vistos > 0);
+      if (vistos) primero = false;
+      cab.querySelector("em").textContent = hallados > vistos ? vistos + " de " + hallados.toLocaleString("es-MX")
+                                                              : hallados;
+    };
+    lista.querySelectorAll("li").forEach(li => {
+      if (li.classList.contains("grupo")) {
+        cerrar(); cab = li; vistos = hallados = 0; tope = base + (extra[li.dataset.g] || 0); return;
+      }
+      if (li.classList.contains("mas")) {
+        const quedan = hallados - vistos, mas = li.querySelector("[data-acc=mas]"), menos = li.querySelector("[data-acc=menos]");
+        mas.hidden = !quedan;
+        mas.textContent = "Mostrar " + Math.min(PASO, quedan).toLocaleString("es-MX") + " más";
+        menos.hidden = !(extra[cab.dataset.g] && vistos > base);
+        li.hidden = mas.hidden && menos.hidden;
+        return;
+      }
+      if (!li.classList.contains("op")) return;
+      li.classList.remove("activa");
+      const v = norm(li.dataset.v), ok = !q || (v !== q && palabras.every(p => v.includes(p)));
+      const ver = ok && tope > vistos;
+      hallados += ok;
+      vistos += ver;
+      total += ver;
+      li.hidden = !ver;
+      if (ver) marcar(li.querySelector("span"), li.dataset.v, palabras);
+    });
+    cerrar();
+    lista.hidden = total === 0;
+    const prim = q && lista.querySelector("li.op:not([hidden])");
+    if (prim) prim.classList.add("activa");
+  };
+  const elegir = (caja, li) => {
+    caja.value = li.dataset.v;
+    caja.dispatchEvent(new Event("input", {bubbles: true}));
+    caja.parentElement.querySelector(".sugerencias").hidden = true;
+  };
+  escuchar("focusin", e => {
+    const caja = entrada(e), lista = caja && caja.parentElement.querySelector(".sugerencias");
+    if (!lista || e.relatedTarget === lista) return;
+    lista.__extra = {};
+    sugerir(caja);
+  });
+  escuchar("focusout", e => {
+    const caja_b = e.target.closest && e.target.closest(".buscador"), lista = caja_b && caja_b.querySelector(".sugerencias");
+    if (!lista || (e.relatedTarget && caja_b.contains(e.relatedTarget))) return;
+    lista.hidden = true;
+  });
+  escuchar("mouseup", e => {
+    const lista = e.target.closest && e.target.closest(".sugerencias");
+    if (lista && document.activeElement === lista)
+      lista.closest(".buscador").querySelector("input").focus({preventScroll: true});
+  });
+  escuchar("mousedown", e => {
+    const li = e.target.closest && e.target.closest(".sugerencias li");
+    if (!li) return;
+    e.preventDefault();
+    const caja = li.closest(".buscador").querySelector("input"), acc = e.target.closest("[data-acc]");
+    if (li.classList.contains("op")) elegir(caja, li);
+    else if (acc) {
+      let cab = li.previousElementSibling;
+      while (cab && !cab.classList.contains("grupo")) cab = cab.previousElementSibling;
+      const extra = li.parentElement.__extra = li.parentElement.__extra || {}, g = cab.dataset.g;
+      extra[g] = acc.dataset.acc === "mas" ? (extra[g] || 0) + PASO : 0;
+      sugerir(caja);
+      if (acc.dataset.acc === "menos") cab.scrollIntoView({block: "nearest"});
+    }
+  });
+  escuchar("keydown", e => {
+    const caja = entrada(e), lista = caja && caja.parentElement.querySelector(".sugerencias");
+    if (!lista || lista.hidden) return;
+    const vis = Array.from(lista.querySelectorAll("li.op:not([hidden])"));
+    let i = vis.findIndex(li => li.classList.contains("activa"));
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (i >= 0) vis[i].classList.remove("activa");
+      i = (i + (e.key === "ArrowDown" ? 1 : vis.length - 1 + (0 > i ? 1 : 0))) % vis.length;
+      vis[i].classList.add("activa");
+      vis[i].scrollIntoView({block: "nearest"});
+    } else if (e.key === "Enter" && vis.length) {
+      e.preventDefault();
+      elegir(caja, vis[Math.max(i, 0)]);
+    } else if (e.key === "Escape") {
+      lista.hidden = true;
+    }
+  });
+  escuchar("input", e => {
+    const caja = entrada(e);
+    if (!caja) return;
+    if (e.isTrusted) sugerir(caja);
+    const caja_b = caja.closest(".buscable"), q = norm(caja.value), palabras = q.split(/\\s+/).filter(Boolean);
+    let n = 0;
+    caja_b.querySelectorAll("tbody tr:not(.vacio), .rk-fila:not(.vacio)").forEach(r => {
+      // Texto de las celdas más el texto oculto data-busca (folio, mes, clave…)
+      const celdas = r.cells ? Array.from(r.cells).map(c => c.textContent).join(" ") : r.textContent;
+      const ok = palabras.every(p => norm(celdas + " " + (r.dataset.busca || "")).includes(p));
+      r.hidden = !ok;
+      n += ok;
+    });
+    const vacio = caja_b.querySelector(".vacio");
+    if (vacio) vacio.hidden = n > 0;
+    caja_b.querySelector(".buscador .cuenta").textContent = q ? n.toLocaleString("es-MX") + " de " + caja_b.dataset.total : "";
+  });
+}
+</script>"""
+
+ICONO_GRUPO = {"Señal": "flag", "Persona": "person", "Autorizó": "how_to_reg", "Pidió": "person_raised_hand",
+               "Región": "map", "Unidad operativa": "store", "Producto": "shopping_cart", "Inventario": "inventory_2",
+               "Franja del mínimo": "south", "Tipo de cambio": "swap_vert", "Mes": "calendar_month"}
+PIE_SUGERENCIAS = ("<li class='pie-sug'><span><kbd>↑</kbd><kbd>↓</kbd> moverse</span><span><kbd>Enter</kbd> elegir"
+                   "</span><span><kbd>Esc</kbd> cerrar</span></li>")
+
+
+def buscador(texto: str, sugerencias: dict | None = None, unidad: str = "casos") -> str:
+    """Campo de búsqueda. sugerencias: {sección: Serie valor -> cuántos renglones}; se despliegan al enfocar."""
+    lista = "".join(
+        f"<li class='grupo' data-g='{escape(g)}' hidden>{ic(ICONO_GRUPO.get(g, 'search'), None, 15)}"
+        f"<b>{escape(g)}</b><em></em></li>"
+        + "".join(f"<li class='op' data-v='{escape(str(v))}' hidden><span>{escape(str(v))}</span>"
+                  f"<small>{int(n):,} {unidad}</small></li>" for v, n in valores.items() if pd.notna(v) and str(v))
+        + "<li class='mas' hidden><span data-acc='mas'>Mostrar más</span>"
+          "<span data-acc='menos' hidden>Mostrar menos</span></li>"
+        for g, valores in (sugerencias or {}).items() if len(valores))
+    sug = f"<ul class='sugerencias' tabindex='-1' hidden>{lista}{PIE_SUGERENCIAS}</ul>" if lista else ""
+    return (f"<label class='buscador'>{ic('search', None, 18)}<input type='search' placeholder='{escape(texto)}' "
+            f"autocomplete='off'><span class='cuenta'></span>{sug}</label>")
+
+
+def buscable(contenido: str, total: int, texto: str, sugerencias: dict | None = None, unidad: str = "casos") -> str:
+    """Envuelve una tabla o lista con su buscador."""
+    return (f"<div class='buscable' data-total='{total:,}'>{buscador(texto, sugerencias, unidad)}"
+            f"{contenido}</div>")
+
+
+def sugerencias_de(d: pd.DataFrame, columnas: dict) -> dict:
+    """{sección: columna de d} -> {sección: Serie valor -> renglones}, de más a menos. Las columnas con varios
+    valores separados por ' · ' (como las razones) se cuentan por separado."""
+    salida = {}
+    for grupo, col in columnas.items():
+        s = d[col].dropna().astype(str)
+        if s.str.contains(" · ", regex=False).any():
+            s = s.str.split(" · ").explode()
+        s = s[s.str.strip() != ""]
+        salida[grupo] = s.value_counts()
+    return salida
 
 
 def color_semaforo(pct: float) -> str:
@@ -682,8 +922,13 @@ def card_lista(dest, titulo: str, icono: str, serie: pd.Series, color: str = AZU
     completo = len(vc) <= 20
     aviso = "" if completo else f" · desliza la lista para ver los {len(vc)}"
     estilo_ = "" if completo else f"max-height:{alto}px"
-    html(f"<div class='nota'>{conclusion(vc, unidad)} · {len(vc)} en total{aviso}</div>"
-         f"<div class='ley' style='{estilo_}'>{filas}</div>", cont)
+    lista = f"<div class='ley' style='{estilo_}'>{filas}"
+    if len(vc) > 8:  # listas largas: con buscador
+        lista += "<div class='rk-fila vacio' hidden>Sin coincidencias.</div></div>"
+        lista = buscable(lista, len(vc), f"Buscar en {titulo.lower()}…")
+    else:
+        lista += "</div>"
+    html(f"<div class='nota'>{conclusion(vc, unidad)} · {len(vc)} en total{aviso}</div>{lista}", cont)
 
 
 def preparar(df_: pd.DataFrame) -> pd.DataFrame:
@@ -1250,8 +1495,17 @@ def mostrar_casos(dest, t: pd.DataFrame, alto: int = 700) -> None:
            "<th rowspan='2'>Región / unidad</th><th rowspan='2'>Folio / mes</th></tr>"
            "<tr><th class='num sep'>Antes</th><th class='num'>Después</th><th class='num'>Cambio</th>"
            "<th class='num sep'>Antes</th><th class='num'>Después</th><th class='num'>Cambio</th></tr>")
-    html(f"<div class='tabla-casos' style='max-height:{alto}px'><table><thead>{cab}</thead>"
-         f"<tbody>{''.join(filas)}</tbody></table></div>", dest)
+    # texto oculto que también se busca: lo que no se ve en la tabla (tipo de cambio, mes completo)
+    oculto = (t["Tipo de cambio"].astype(str) + " " + t["Mes"].astype(str) + " "
+              + t["Autorizado el"].map(lambda f: "" if pd.isna(f) else mes_largo(f.strftime("%Y-%m"))))
+    filas = [f.replace("<tr>", f"<tr data-busca='{escape(b)}'>", 1) for f, b in zip(filas, oculto)]
+    vacio = "<tr class='vacio' hidden><td colspan='12'>Sin coincidencias. Prueba con otras palabras.</td></tr>"
+    tabla = (f"<div class='tabla-casos' style='max-height:{alto}px'><table><thead>{cab}</thead>"
+             f"<tbody>{''.join(filas)}{vacio}</tbody></table></div>")
+    sug = sugerencias_de(t, {"Señal": "¿Por qué?", "Producto": "Producto", "Región": "Región",
+                             "Unidad operativa": "Unidad", "Autorizó": "Autorizó", "Pidió": "Pidió",
+                             "Tipo de cambio": "Tipo de cambio", "Inventario": "Inventario", "Mes": "Mes"})
+    html(buscable(tabla, len(t), "Buscar producto, unidad, región, persona, señal, folio, mes…", sug), dest)
 
 
 def leyenda_cambios() -> str:
@@ -1440,7 +1694,23 @@ def tabla_atipicos(r: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------- tablas de la página de política (HTML)
-MAX_FILAS = 300  # filas que se dibujan en pantalla; el Excel trae todas
+MAX_FILAS = 2000  # filas que se dibujan en pantalla (y en las que busca el buscador); el Excel trae todas
+
+
+def sug_casos(r: pd.DataFrame, señales: str | None = None) -> dict:
+    """Sugerencias del buscador para una lista de cambios."""
+    d = r.assign(**{"_unidad": r["NOMBRE DE UNIDAD OP."].str.title(), "_mes": r["Mes"].map(mes_largo)})
+    cols = {"Señal": señales} if señales else {}
+    cols.update({"Producto": "Producto", "Región": "Región", "Unidad operativa": "_unidad", "Autorizó": "Autorizó",
+                 "Pidió": "Solicitó", "Inventario": "Inventario (corto)", "Mes": "_mes"})
+    return sugerencias_de(d, cols)
+
+
+def busca_casos(r: pd.DataFrame) -> list[str]:
+    """Texto oculto que también se busca en cada cambio: folio, claves, mes completo, tipo de cambio."""
+    return (r["SCFOLIO"].astype(str) + " " + r["CVE. DE PRODUCTO"].astype(str) + " " + r["Mes"].map(mes_largo)
+            + " " + r["Tipo de cambio"].astype(str) + " " + r["Inventario (corto)"].astype(str)
+            + " " + r["Solicitud"].astype(str)).tolist()
 
 
 def num(v) -> str:
@@ -1475,14 +1745,23 @@ def td_rango(antes: float, despues: float) -> str:
             f"<b style='color:{c_}'>{ic(f_, c_, 13) if f_ else ''}{num(despues)}</b></td>")
 
 
-def tabla_html(dest, cab: list[tuple[str, str, bool]], filas: list[str], total: int, alto: int = 520) -> None:
-    """cab: (título, subtítulo, ¿numérica?). filas: '<tr>…</tr>' ya armadas."""
+def tabla_html(dest, cab: list[tuple[str, str, bool]], filas: list[str], total: int, alto: int = 520,
+               buscar: str | None = None, busca: list[str] | None = None, sugerencias: dict | None = None,
+               unidad: str = "casos") -> None:
+    """cab: (título, subtítulo, ¿numérica?). filas: '<tr>…</tr>' ya armadas.
+    buscar: texto de ayuda del buscador (sin él no hay buscador). busca: por renglón, texto oculto que también se
+    busca (folio, mes, clave…). sugerencias: ver buscador()."""
     th = "".join(f"<th class='{'num' if n else ''}'>{t}{f'<div class=sub>{s}</div>' if s else ''}</th>"
                  for t, s, n in cab)
-    nota = (f"<div class='nota' style='min-height:0'>Se muestran {len(filas):,} de {total:,}. El Excel del final "
-            "trae todos.</div>" if total > len(filas) else "")
-    html(f"<div class='tabla-casos tabla-pol' style='max-height:{alto}px'><table><thead><tr>{th}</tr></thead>"
-         f"<tbody>{''.join(filas)}</tbody></table></div>{nota}", dest)
+    if busca:
+        filas = [f.replace("<tr>", f"<tr data-busca='{escape(b)}'>", 1) for f, b in zip(filas, busca)]
+    vacio = (f"<tr class='vacio' hidden><td colspan='{len(cab)}'>Sin coincidencias. Prueba con otras palabras."
+             "</td></tr>" if buscar else "")
+    nota = (f"<div class='nota' style='min-height:0'>Se muestran {len(filas):,} de {total:,} (el buscador busca "
+            "en estos). El Excel del final trae todos.</div>" if total > len(filas) else "")
+    tabla = (f"<div class='tabla-casos tabla-pol' style='max-height:{alto}px'><table><thead><tr>{th}</tr></thead>"
+             f"<tbody>{''.join(filas)}{vacio}</tbody></table></div>")
+    html((buscable(tabla, len(filas), buscar, sugerencias, unidad) if buscar else tabla) + nota, dest)
 
 
 def cols_pct() -> list[tuple[str, str, str, bool]]:
@@ -1494,7 +1773,8 @@ def cols_pct() -> list[tuple[str, str, str, bool]]:
             (f"% máximo arriba de {POL:g}%", f"Máx. &gt; {POL:g}%", "más caro que la política", True)]
 
 
-def tabla_resumen_html(dest, t: pd.DataFrame, ident: list[tuple[str, str, object]]) -> None:
+def tabla_resumen_html(dest, t: pd.DataFrame, ident: list[tuple[str, str, object]], buscar: str | None = None,
+                       sugerencias: dict | None = None, unidad: str = "filas") -> None:
     """Tabla por persona/unidad. ident: (título, subtítulo, función fila -> '<td>…</td>')."""
     cp = cols_pct()
     cab = ([(a, b, False) for a, b, _ in ident] + [("Cambios", "", True)]
@@ -1506,7 +1786,7 @@ def tabla_resumen_html(dest, t: pd.DataFrame, ident: list[tuple[str, str, object
         filas.append("<tr>" + "".join(fn(f) for _, _, fn in ident) + f"<td class='num'>{n_:,}</td>"
                      + "".join(td_pct(f[c], peor) for c, _, _, peor in cp)
                      + f"<td class='num'>{con:,}<div class='sub'>{100 * con / max(n_, 1):.0f}%</div></td></tr>")
-    tabla_html(dest, cab, filas, len(filas), alto=560)
+    tabla_html(dest, cab, filas, len(filas), alto=560, buscar=buscar, sugerencias=sugerencias, unidad=unidad)
 
 
 def tabla_casos_html(dest, r: pd.DataFrame) -> None:
@@ -1532,7 +1812,9 @@ def tabla_casos_html(dest, r: pd.DataFrame) -> None:
             f"<td>{escape(str(f['Autorizó']))}<div class='sub'>Pidió: {escape(str(f['Solicitó']))}</div></td>"
             f"<td class='fechas'>{fecha_txt(f['FCHAUT'])}<div class='sub'>Folio {escape(str(f['SCFOLIO']))}</div>"
             "</td></tr>")
-    tabla_html(dest, cab, filas, len(r))
+    vis = r.head(MAX_FILAS)
+    tabla_html(dest, cab, filas, len(r), buscar="Buscar producto, unidad, región, persona, señal, folio, mes…",
+               busca=busca_casos(vis), sugerencias=sug_casos(vis, "Señales de política"))
 
 
 def tabla_ventanas_html(dest, tv: pd.DataFrame) -> None:
@@ -1551,7 +1833,11 @@ def tabla_ventanas_html(dest, tv: pd.DataFrame) -> None:
             f"<td>{escape(str(f['Bajó: autorizó']))}<div class='sub'>Folio {escape(str(f['Bajó: folio']))}</div></td>"
             f"<td>{escape(str(f['Subió: autorizó']))}<div class='sub'>Folio {escape(str(f['Subió: folio']))} · "
             f"{fecha_txt(f['Subió el'])}</div></td></tr>")
-    tabla_html(dest, cab, filas, len(tv), alto=420)
+    vis = tv.head(MAX_FILAS)
+    tabla_html(dest, cab, filas, len(tv), alto=420, buscar="Buscar producto, unidad, región, persona, folio…",
+               busca=[mes_largo(pd.Timestamp(x).strftime("%Y-%m")) if pd.notna(x) else "" for x in vis["Subió el"]],
+               sugerencias=sugerencias_de(vis, {"Producto": "Producto", "Región": "Región",
+                                                "Unidad operativa": "Unidad", "Autorizó": "Subió: autorizó"}))
 
 
 def tabla_atipicos_html(dest, ta: pd.DataFrame) -> None:
@@ -1572,7 +1858,13 @@ def tabla_atipicos_html(dest, ta: pd.DataFrame) -> None:
             f"<td class='num'>{int(f['Unidades con el producto'])}</td>"
             f"<td>{escape(str(f['Autorizó']))}<div class='sub'>Folio {escape(str(f['Folio']))} · "
             f"{fecha_txt(f['Autorizado el'])}</div></td></tr>")
-    tabla_html(dest, cab, filas, len(ta), alto=420)
+    vis = ta.head(MAX_FILAS)
+    tabla_html(dest, cab, filas, len(ta), alto=420, buscar="Buscar producto, unidad, región, persona, folio…",
+               busca=[mes_largo(pd.Timestamp(x).strftime("%Y-%m")) if pd.notna(x) else ""
+                      for x in vis["Autorizado el"]],
+               sugerencias=sugerencias_de(vis, {"Producto": "Producto", "Región": "Región",
+                                                "Unidad operativa": "Unidad", "Inventario": "Inventario",
+                                                "Autorizó": "Autorizó"}))
 
 
 def pagina_politica() -> None:
@@ -1710,9 +2002,13 @@ def pagina_politica() -> None:
              f"quien menos. Encabeza <b>{f['Solicitó']}</b>, de <b>{f['Unidad operativa'].split(':')[0]}</b>: "
              f"de cada 100 cambios que pidió, <b>{f[al]:.0f}</b> se alejan del {POL:g}%. La columna "
              "<b>Unidad operativa</b> dice desde qué unidad pide más cambios cada persona.</div>", cont)
+        uo_ = ts_["Unidad operativa"].str.rpartition(": ")[0]
         tabla_resumen_html(cont, ts_, [
             ("Persona", "", lambda f: f"<td><b>{escape(str(f['Solicitó']))}</b></td>"),
-            ("Unidad operativa", "donde pide más cambios", lambda f: td_unidad(f["Unidad operativa"]))])
+            ("Unidad operativa", "donde pide más cambios", lambda f: td_unidad(f["Unidad operativa"]))],
+            buscar="Buscar persona, unidad o región…", unidad="cambios",
+            sugerencias={"Persona": ts_.set_index("Solicitó")["Cambios"].sort_values(ascending=False),
+                         "Unidad operativa": ts_.groupby(uo_)["Cambios"].sum().sort_values(ascending=False)})
 
     tu, base = tabla_unidades_pol(x)
     reinc = tu[tu["¿Reincidente?"] == "Sí"]
@@ -1728,7 +2024,10 @@ def pagina_politica() -> None:
         ("Unidad operativa", "región", lambda f: (
             f"<td><b>{escape(str(f['Unidad operativa']))}</b><div class='sub'>{escape(str(f['Región']))}</div>"
             + ("<span class='chip-sem' style='color:#cf1322;border-color:#ffa39e;background:#fff1f0;"
-               "margin-top:4px'>Reincidente</span>" if f["¿Reincidente?"] == "Sí" else "") + "</td>"))])
+               "margin-top:4px'>Reincidente</span>" if f["¿Reincidente?"] == "Sí" else "") + "</td>"))],
+        buscar="Buscar unidad o región (escribe «reincidente» para ver solo esas)…", unidad="cambios",
+        sugerencias={"Unidad operativa": tu.set_index("Unidad operativa")["Cambios"].sort_values(ascending=False),
+                     "Región": tu.groupby("Región")["Cambios"].sum().sort_values(ascending=False)})
 
     seccion("Casos")
     r = x[x["Núm. señales política"] > 0]
@@ -1822,3 +2121,4 @@ paginas = {
     ],
 }
 st.navigation(paginas).run()
+st.html(BUSCADOR_JS, unsafe_allow_javascript=True)  # activa los buscadores de las listas

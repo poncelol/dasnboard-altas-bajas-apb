@@ -34,6 +34,10 @@ La página "Política del 15%" compara cada rango autorizado contra la *Polític
 
 No revisa la regla de "5% abajo de la competencia" porque el archivo no trae costos ni precios. Las señales sirven para pedir la justificación (incisos h e i del Manual permiten vender abajo del margen con autorización por escrito).
 
+## Buscador de listas
+
+Las tablas de casos, las de la política del 15% y las listas largas (regiones, productos, personas) tienen un buscador: no distingue acentos ni mayúsculas, cada palabra puede ir en cualquier orden y también busca datos que no se ven (folio, clave, mes completo, tipo de cambio). Al hacer clic en el campo se despliegan sugerencias por sección (señal, producto, región, unidad, persona, mes…); se eligen con el mouse o con ↑ ↓ y Enter. Requiere Streamlit 1.66 o más.
+
 ## Filtros
 
 Autorizó, rango de meses, región, inventario y tipo de movimiento (solo incrementos o solo decrementos, en mínimo, en máximo o en cualquiera de los dos). Las pestañas son: Por mes, Incrementos y decrementos, Comparativo y Detalle.
