@@ -23,6 +23,17 @@ streamlit run app.py
 
 La pestaña de alertas marca cada movimiento con 12 señales para revisar: cambio extremo en máximo, máximo solicitado muy alto, baja fuerte del mínimo, mínimo en cero o negativo, rango invertido, ampliación doble, autorización exprés, autorización tardía, fuera de horario, cambio repetido, autorización en lote y auto-aprobación. Los umbrales se ajustan en la barra lateral ("Umbrales de alertas"). Las alertas son señales para pedir justificación, no prueba de una falta.
 
+## Política del 15%
+
+La página "Política del 15%" compara cada rango autorizado contra la *Política de Precios de Venta* (29/01/2020): precio de venta = costo × 1.1765, o sea 15% de utilidad sobre la venta (6% tienda, 1.5% Consejos Comunitarios, 7.5% gastos de operación).
+
+- **Franjas del mínimo:** abajo del costo (< 0), no paga tienda ni Consejos (0–7.5), no cubre operación (7.5–15), en política (15) y arriba (> 15). El máximo se marca si pasa de 15.
+- **¿Corrige o empeora?:** compara qué tan lejos queda el rango del 15% (|mín − 15| + |máx − 15|) antes y después del cambio.
+- **Señales de posible mala práctica:** mínimo abajo del costo, mínimo que no paga tienda ni Consejos, cambio que se aleja del 15%, ventana de precio bajo (bajan el mínimo y lo suben otra vez en menos de 30 días) y mínimo fuera de lo normal para el producto (10 pts o más contra la mediana de las demás unidades).
+- **Quién y dónde:** porcentajes por autorizador, solicitante y unidad operativa; una unidad es *reincidente* si se aleja del 15% 1.5 veces más que el promedio.
+
+No revisa la regla de "5% abajo de la competencia" porque el archivo no trae costos ni precios. Las señales sirven para pedir la justificación (incisos h e i del Manual permiten vender abajo del margen con autorización por escrito).
+
 ## Filtros
 
 Autorizó, rango de meses, región, inventario y tipo de movimiento (solo incrementos o solo decrementos, en mínimo, en máximo o en cualquiera de los dos). Las pestañas son: Por mes, Incrementos y decrementos, Comparativo y Detalle.
