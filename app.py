@@ -466,6 +466,18 @@ header[data-testid="stHeader"]{background:#ffffff;box-shadow:0 1px 4px rgba(0,21
 .hist-n{width:18px;height:18px;border-radius:50%;background:#1677ff;color:#fff;font-size:11px;font-weight:600;
   display:grid;place-items:center;flex-shrink:0;margin-top:2px}
 .hist .sub{margin:0}
+.tabla-pol table{min-width:0;table-layout:auto}
+.tabla-pol th{white-space:normal;height:auto;vertical-align:bottom;line-height:1.3}
+.tabla-pol th .sub{font-weight:400;white-space:normal}
+.tabla-pol td{vertical-align:middle}
+.tabla-pol tbody tr:nth-child(even) td{background:#fcfcfc}
+.tabla-pol tbody tr:hover td{background:#f0f7ff}
+.tabla-pol .num{white-space:nowrap}
+.tabla-pol .antes{color:rgba(0,0,0,.45)}
+.tabla-pol .prod{min-width:140px;max-width:240px}
+.tabla-pol .porque{min-width:200px;max-width:280px}
+.pbar{height:5px;background:#f0f0f0;border-radius:100px;overflow:hidden;margin-top:4px;min-width:56px}
+.pbar>span{display:block;height:100%;border-radius:100px}
 .hist-pie{margin-top:5px;padding-top:5px;border-top:1px dashed #d6e4ff;color:rgba(0,0,0,.65)}
 </style>
 """
@@ -1348,10 +1360,23 @@ def casos_excel() -> bytes:
     return buf.getvalue()
 
 
-def tabla_pol(x: pd.DataFrame, por, minimo: int = 1) -> pd.DataFrame:
-    """Qué tanto se apega a la política cada persona, unidad, etc. (en % de sus cambios)."""
+def unidad_principal(x: pd.DataFrame, por: str) -> pd.Series:
+    """Unidad operativa (y región) donde cada persona tiene más cambios."""
+    u = x["NOMBRE DE UNIDAD OP."].str.title() + " (" + x["Región"] + ")"
+
+    def principal(s: pd.Series) -> str:
+        vc = s.value_counts()
+        otras = f" · y {len(vc) - 1} unidad{'es' if len(vc) > 2 else ''} más" if len(vc) > 1 else ""
+        return f"{vc.index[0]}: {vc.iloc[0]:,} cambios{otras}"
+    return u.groupby(x[por]).apply(principal)
+
+
+def tabla_pol(x: pd.DataFrame, por, minimo: int = 1, unidad: str | None = None) -> pd.DataFrame:
+    """Qué tanto se apega a la política cada persona, unidad, etc. (en % de sus cambios).
+    `unidad`: nombre de la columna con la unidad operativa donde la persona tiene más cambios."""
     g = x.groupby(por)
     t = pd.DataFrame({
+        **({unidad: unidad_principal(x, por)} if unidad else {}),
         "Cambios": g.size(),
         f"% se aleja del {POL:g}%": 100 * g[D_ALEJA].mean(),
         f"% se acerca al {POL:g}%": 100 * g["Dirección política"].apply(lambda s: (s == D_ACERCA).mean()),
@@ -1414,12 +1439,140 @@ def tabla_atipicos(r: pd.DataFrame) -> pd.DataFrame:
     return t.reindex(t["Diferencia (pts)"].abs().sort_values(ascending=False).index)
 
 
-def df_pct(dest, t: pd.DataFrame, alto: int | None = None) -> None:
-    """Tabla con barras en las columnas de porcentaje."""
-    cfg = {c: st.column_config.ProgressColumn(c, min_value=0, max_value=100, format="%.0f%%")
-           for c in t.columns if str(c).startswith("%")}
-    dest.dataframe(t, hide_index=True, width=ANCHO, column_config=cfg,
-                   height=alto or min(38 * (len(t) + 1) + 4, 460))
+# ---------------------------------------------------------------- tablas de la página de política (HTML)
+MAX_FILAS = 300  # filas que se dibujan en pantalla; el Excel trae todas
+
+
+def num(v) -> str:
+    return "" if pd.isna(v) else f"{float(v):.1f}".removesuffix(".0")
+
+
+def fecha_txt(f) -> str:
+    return "" if pd.isna(f) else pd.Timestamp(f).strftime("%d/%m/%Y")
+
+
+def td_pct(v: float, peor: bool = True) -> str:
+    """Porcentaje con barrita: rojo/amarillo/verde si más es peor; azul si más es mejor."""
+    if pd.isna(v):
+        return "<td></td>"
+    c_ = (ROJO if v >= 50 else AMARILLO if v >= 25 else VERDE) if peor else AZUL
+    return (f"<td class='num'><b>{v:.0f}%</b><div class='pbar'><span style='width:{min(v, 100):.0f}%;"
+            f"background:{c_}'></span></div></td>")
+
+
+def td_unidad(texto: str) -> str:
+    """'Unidad X (Región): 52 cambios · y 3 unidades más' -> nombre en negritas y detalle abajo."""
+    nombre, _, detalle = str(texto).rpartition(": ")
+    return f"<td><b>{escape(nombre or texto)}</b><div class='sub'>{escape(detalle) if nombre else ''}</div></td>"
+
+
+def td_rango(antes: float, despues: float) -> str:
+    if pd.isna(despues):
+        return "<td></td>"
+    c_ = "#389e0d" if despues > antes else "#cf1322" if despues < antes else TEXTO
+    f_ = "arrow_upward" if despues > antes else "arrow_downward" if despues < antes else ""
+    return (f"<td class='num'><span class='antes'>{num(antes)}</span> → "
+            f"<b style='color:{c_}'>{ic(f_, c_, 13) if f_ else ''}{num(despues)}</b></td>")
+
+
+def tabla_html(dest, cab: list[tuple[str, str, bool]], filas: list[str], total: int, alto: int = 520) -> None:
+    """cab: (título, subtítulo, ¿numérica?). filas: '<tr>…</tr>' ya armadas."""
+    th = "".join(f"<th class='{'num' if n else ''}'>{t}{f'<div class=sub>{s}</div>' if s else ''}</th>"
+                 for t, s, n in cab)
+    nota = (f"<div class='nota' style='min-height:0'>Se muestran {len(filas):,} de {total:,}. El Excel del final "
+            "trae todos.</div>" if total > len(filas) else "")
+    html(f"<div class='tabla-casos tabla-pol' style='max-height:{alto}px'><table><thead><tr>{th}</tr></thead>"
+         f"<tbody>{''.join(filas)}</tbody></table></div>{nota}", dest)
+
+
+def cols_pct() -> list[tuple[str, str, str, bool]]:
+    """(columna, título, subtítulo, ¿más es peor?)"""
+    return [(f"% se aleja del {POL:g}%", "Empeoran", f"se alejan del {POL:g}%", True),
+            (f"% se acerca al {POL:g}%", "Corrigen", f"se acercan al {POL:g}%", False),
+            (f"% mínimo abajo de {POL:g}%", f"Mín. &lt; {POL:g}%", "abajo de la política", True),
+            (f"% mínimo abajo de {POL_PISO:g}%", f"Mín. &lt; {POL_PISO:g}%", "no paga tienda ni Consejos", True),
+            (f"% máximo arriba de {POL:g}%", f"Máx. &gt; {POL:g}%", "más caro que la política", True)]
+
+
+def tabla_resumen_html(dest, t: pd.DataFrame, ident: list[tuple[str, str, object]]) -> None:
+    """Tabla por persona/unidad. ident: (título, subtítulo, función fila -> '<td>…</td>')."""
+    cp = cols_pct()
+    cab = ([(a, b, False) for a, b, _ in ident] + [("Cambios", "", True)]
+           + [(h, s, True) for _, h, s, _ in cp] + [("Con señal", "de política", True)])
+    filas = []
+    for _, f in t.iterrows():
+        n_ = int(f["Cambios"])
+        con = int(f["Cambios con señal de política"])
+        filas.append("<tr>" + "".join(fn(f) for _, _, fn in ident) + f"<td class='num'>{n_:,}</td>"
+                     + "".join(td_pct(f[c], peor) for c, _, _, peor in cp)
+                     + f"<td class='num'>{con:,}<div class='sub'>{100 * con / max(n_, 1):.0f}%</div></td></tr>")
+    tabla_html(dest, cab, filas, len(filas), alto=560)
+
+
+def tabla_casos_html(dest, r: pd.DataFrame) -> None:
+    r = r.sort_values(["Núm. señales política", "SCMARMINSOL"], ascending=[False, True])
+    cab = [("Señales", "", False), ("¿Por qué?", "", False), ("Producto", "", False),
+           ("Región / unidad", "", False), ("Mínimo", "antes → después", True), ("Máximo", "antes → después", True),
+           ("Franja del mínimo", "", False), ("Autorizó / pidió", "", False), ("Fecha / folio", "", False)]
+    filas = []
+    for _, f in r.head(MAX_FILAS).iterrows():
+        n_ = int(f["Núm. señales política"])
+        c_ = ROJO if n_ >= 3 else AMARILLO if n_ == 2 else "#d48806"
+        razones = "".join(f"<div class='rz'>{ic('flag', c_, 13)}<span>{escape(z)}</span></div>"
+                          for z in str(f["Señales de política"]).split(" · ") if z)
+        fr = COLORES_FRANJA.get(f["Franja mín."], GRIS)
+        filas.append(
+            f"<tr><td><span class='chip-sem' style='color:{c_};border-color:{c_}'>{n_}</span></td>"
+            f"<td class='porque'>{razones}</td>"
+            f"<td class='prod'><b>{escape(str(f['Producto']))}</b><div class='sub'>"
+            f"{escape(str(f['Inventario (corto)']))}</div></td>"
+            f"<td>{escape(str(f['NOMBRE DE UNIDAD OP.']).title())}<div class='sub'>{escape(str(f['Región']))}</div></td>"
+            f"{td_rango(f['SCMARMINACT'], f['SCMARMINSOL'])}{td_rango(f['SCMARMAXACT'], f['SCMARMAXSOL'])}"
+            f"<td><span class='ley-dot' style='background:{fr}'></span> {escape(str(f['Franja mín.']))}</td>"
+            f"<td>{escape(str(f['Autorizó']))}<div class='sub'>Pidió: {escape(str(f['Solicitó']))}</div></td>"
+            f"<td class='fechas'>{fecha_txt(f['FCHAUT'])}<div class='sub'>Folio {escape(str(f['SCFOLIO']))}</div>"
+            "</td></tr>")
+    tabla_html(dest, cab, filas, len(r))
+
+
+def tabla_ventanas_html(dest, tv: pd.DataFrame) -> None:
+    cab = [("Producto", "", False), ("Región / unidad", "", False),
+           ("Mínimo", "original → lo bajaron → lo regresaron", True), ("Días con el mínimo bajo", "", True),
+           ("Lo bajó", "autorizó · folio", False), ("Lo regresó", "autorizó · folio · fecha", False)]
+    filas = []
+    for _, f in tv.head(MAX_FILAS).iterrows():
+        filas.append(
+            f"<tr><td class='prod'><b>{escape(str(f['Producto']))}</b></td>"
+            f"<td>{escape(str(f['Unidad']))}<div class='sub'>{escape(str(f['Región']))}</div></td>"
+            f"<td class='num'><span class='antes'>{num(f['Mín. original'])}</span> → "
+            f"<b style='color:#cf1322'>{num(f['Lo bajaron a'])}</b> → "
+            f"<b style='color:#389e0d'>{num(f['Lo regresaron a'])}</b></td>"
+            f"<td class='num'><b>{num(f['Días con el mínimo bajo'])}</b></td>"
+            f"<td>{escape(str(f['Bajó: autorizó']))}<div class='sub'>Folio {escape(str(f['Bajó: folio']))}</div></td>"
+            f"<td>{escape(str(f['Subió: autorizó']))}<div class='sub'>Folio {escape(str(f['Subió: folio']))} · "
+            f"{fecha_txt(f['Subió el'])}</div></td></tr>")
+    tabla_html(dest, cab, filas, len(tv), alto=420)
+
+
+def tabla_atipicos_html(dest, ta: pd.DataFrame) -> None:
+    cab = [("Producto", "", False), ("Región / unidad", "", False), ("Mín. autorizado", "", True),
+           ("Mín. típico", "en las demás unidades", True), ("Diferencia", "puntos", True),
+           ("Unidades con el producto", "", True), ("Autorizó", "folio · fecha", False)]
+    filas = []
+    for _, f in ta.head(MAX_FILAS).iterrows():
+        d_ = f["Diferencia (pts)"]
+        c_ = "#389e0d" if d_ > 0 else "#cf1322"
+        filas.append(
+            f"<tr><td class='prod'><b>{escape(str(f['Producto']))}</b><div class='sub'>"
+            f"{escape(str(f['Inventario']))}</div></td>"
+            f"<td>{escape(str(f['Unidad']))}<div class='sub'>{escape(str(f['Región']))}</div></td>"
+            f"<td class='num'><b>{num(f['Mín. autorizado'])}</b></td>"
+            f"<td class='num'>{num(f['Mín. típico del producto'])}</td>"
+            f"<td class='num'><b style='color:{c_}'>{'+' if d_ > 0 else ''}{num(d_)}</b></td>"
+            f"<td class='num'>{int(f['Unidades con el producto'])}</td>"
+            f"<td>{escape(str(f['Autorizó']))}<div class='sub'>Folio {escape(str(f['Folio']))} · "
+            f"{fecha_txt(f['Autorizado el'])}</div></td></tr>")
+    tabla_html(dest, cab, filas, len(ta), alto=420)
 
 
 def pagina_politica() -> None:
@@ -1436,6 +1589,21 @@ def pagina_politica() -> None:
         trae costos ni precios. Los incisos h e i del Manual permiten vender abajo del margen con
         <b>autorización por escrito</b>; el archivo no dice si existe ese oficio, así que estas señales sirven
         para <b>pedir la justificación</b>, no prueban una falta.</small></div></div>""")
+    cont = card("¿Cómo leer esta página?", "menu_book")
+    html(f"""<ul class='lista'>
+        <li><span class='dot'>1</span><div><b>¿Dónde quedaron los márgenes?</b><small>Cuántos mínimos y
+        máximos autorizados quedaron arriba, abajo o justo en el {POL:g}%. Entre más rojo, menos alcanza el margen
+        para pagar la tienda, los Consejos y la operación.</small></div></li>
+        <li><span class='dot'>2</span><div><b>¿Los cambios corrigen o empeoran?</b><small>Un cambio
+        <b>corrige</b> si deja el rango más cerca del {POL:g}% y <b>empeora</b> si lo deja más lejos.
+        Ejemplo: bajar el mínimo de 17 a 16 corrige; bajarlo de 15 a 5 empeora.</small></div></li>
+        <li><span class='dot'>3</span><div><b>Señales de posible mala práctica</b><small>Cinco situaciones que
+        conviene preguntar, como bajar el mínimo y volverlo a subir a los pocos días.</small></div></li>
+        <li><span class='dot'>4</span><div><b>¿Quién y dónde?</b><small>Las mismas cifras por persona que
+        autorizó, por persona que pidió y por unidad operativa, siempre en <b>porcentaje de sus propios
+        cambios</b> para comparar parejo aunque unos hagan más cambios que otros.</small></div></li>
+        <li><span class='dot'>5</span><div><b>Casos</b><small>La lista de cambios concretos para pedir
+        justificación. Todo se puede bajar en Excel con el botón del final.</small></div></li></ul>""", cont)
 
     seccion("Resumen")
     bajo15 = int((x["SCMARMINSOL"] < POL - EPS).sum())
@@ -1512,21 +1680,55 @@ def pagina_politica() -> None:
         for k, v in SEÑALES_POL.items()) + "</ul>", cont)
 
     seccion("¿Quién y dónde?")
+    al, ac = f"% se aleja del {POL:g}%", f"% se acerca al {POL:g}%"
+    html(f"""<div class='aviso' style='background:#f5f9ff;border-color:#d6e4ff'>{ic('help', AZUL)}<div>
+        <b>Cómo leer las tablas:</b> cada porcentaje es <b>de cada 100 cambios de esa fila</b>.
+        <b>{al}</b> = cuántos dejaron el rango más lejos de la política (empeoran) ·
+        <b>{ac}</b> = cuántos lo corrigieron ·
+        <b>% mínimo abajo de {POL:g}%</b> = cuántos dejaron el mínimo debajo de la política ·
+        <b>% mínimo abajo de {POL_PISO:g}%</b> = cuántos dejaron un mínimo que no paga tienda ni Consejos ·
+        <b>% máximo arriba de {POL:g}%</b> = cuántos permiten vender más caro que la política.</div></div>""")
+
+    ta_ = tabla_pol(x, "Autorizó", unidad="Unidad donde más autorizó")
     cont = card("Por persona que autorizó", "how_to_reg")
-    html("<div class='nota' style='min-height:0'>Porcentajes sobre los cambios de cada persona, para comparar "
-         "aunque una autorice más que la otra.</div>", cont)
-    df_pct(cont, tabla_pol(x, "Autorizó"))
+    html("<div class='nota' style='min-height:0'>" + "<br>".join(
+        f"<b>{f['Autorizó']}</b> autorizó {int(f['Cambios']):,} cambios: de cada 100, "
+        f"<b>{f[al]:.0f} empeoran</b> el rango y {f[ac]:.0f} lo corrigen. Donde más autorizó: "
+        f"<b>{f['Unidad donde más autorizó'].split(':')[0]}</b>."
+        for _, f in ta_.iterrows()) + "</div>", cont)
+    tabla_resumen_html(cont, ta_, [
+        ("Persona", "", lambda f: f"<td><b>{escape(str(f['Autorizó']))}</b></td>"),
+        ("Donde más autorizó", "unidad operativa (región)", lambda f: td_unidad(f["Unidad donde más autorizó"]))])
+
+    ts_ = tabla_pol(x, "Solicitó", minimo=10, unidad="Unidad operativa")
     cont = card("Por persona que pidió (10 o más cambios)", "person_raised_hand")
-    html("<div class='nota' style='min-height:0'>Ordenado de quien más pide cambios que se alejan del "
-         f"{POL:g}% a quien menos. Alguien que casi siempre pide bajar el mínimo merece una pregunta.</div>", cont)
-    df_pct(cont, tabla_pol(x, "Solicitó", minimo=10))
+    if ts_.empty:
+        html("<div class='nota'>Nadie pidió 10 o más cambios.</div>", cont)
+    else:
+        f = ts_.iloc[0]
+        html(f"<div class='nota' style='min-height:0'>Ordenado de quien más pide cambios que empeoran el rango a "
+             f"quien menos. Encabeza <b>{f['Solicitó']}</b>, de <b>{f['Unidad operativa'].split(':')[0]}</b>: "
+             f"de cada 100 cambios que pidió, <b>{f[al]:.0f}</b> se alejan del {POL:g}%. La columna "
+             "<b>Unidad operativa</b> dice desde qué unidad pide más cambios cada persona.</div>", cont)
+        tabla_resumen_html(cont, ts_, [
+            ("Persona", "", lambda f: f"<td><b>{escape(str(f['Solicitó']))}</b></td>"),
+            ("Unidad operativa", "donde pide más cambios", lambda f: td_unidad(f["Unidad operativa"]))])
+
     tu, base = tabla_unidades_pol(x)
+    reinc = tu[tu["¿Reincidente?"] == "Sí"]
     cont = card("Unidades operativas (10 o más cambios)", "store")
-    html(f"<div class='nota' style='min-height:0'>En promedio, <b>{base:.0f}%</b> de los cambios se aleja del "
-         f"{POL:g}%. Una unidad es <b>reincidente</b> si su porcentaje es {POL_REINCIDENTE:g} veces el promedio o "
-         f"más ({POL_REINCIDENTE * base:.0f}%+). Hay <b>{int((tu['¿Reincidente?'] == 'Sí').sum())}</b>.</div>",
-         cont)
-    df_pct(cont, tu)
+    nombres = ", ".join(f"<b>{u}</b> ({p:.0f}%)" for u, p in zip(reinc["Unidad operativa"].head(5),
+                                                                   reinc[al].head(5)))
+    html(f"<div class='nota' style='min-height:0'>En promedio, <b>{base:.0f} de cada 100</b> cambios empeoran el "
+         f"rango. Una unidad es <b>reincidente</b> si le pasa {POL_REINCIDENTE:g} veces más que al promedio "
+         f"({POL_REINCIDENTE * base:.0f} de cada 100 o más). "
+         + (f"Hay <b>{len(reinc)}</b>: {nombres}{' y otras' if len(reinc) > 5 else ''}." if len(reinc) else
+            "Ninguna unidad es reincidente.") + "</div>", cont)
+    tabla_resumen_html(cont, tu, [
+        ("Unidad operativa", "región", lambda f: (
+            f"<td><b>{escape(str(f['Unidad operativa']))}</b><div class='sub'>{escape(str(f['Región']))}</div>"
+            + ("<span class='chip-sem' style='color:#cf1322;border-color:#ffa39e;background:#fff1f0;"
+               "margin-top:4px'>Reincidente</span>" if f["¿Reincidente?"] == "Sí" else "") + "</td>"))])
 
     seccion("Casos")
     r = x[x["Núm. señales política"] > 0]
@@ -1538,7 +1740,7 @@ def pagina_politica() -> None:
     if tv.empty:
         html("<div class='nota'>No hay ventanas de precio bajo.</div>", cont)
     else:
-        cont.dataframe(tv, hide_index=True, width=ANCHO, height=min(38 * (len(tv) + 1) + 4, 420))
+        tabla_ventanas_html(cont, tv)
     cont = card(f"Fuera de lo normal para el producto · {len(ta):,}", "scatter_plot")
     html(f"<div class='nota' style='min-height:0'>El mismo producto tiene en esta unidad un mínimo "
          f"{POL_ATIPICO:g} puntos o más distinto al de las demás unidades. Ordenados de la diferencia más grande a "
@@ -1546,14 +1748,14 @@ def pagina_politica() -> None:
     if ta.empty:
         html("<div class='nota'>No hay productos fuera de lo normal.</div>", cont)
     else:
-        cont.dataframe(ta, hide_index=True, width=ANCHO, height=min(38 * (len(ta) + 1) + 4, 420))
+        tabla_atipicos_html(cont, ta)
     cont = card(f"Todos los cambios con alguna señal de política · {len(r):,}", "fact_check")
     html("<div class='nota' style='min-height:0'>Ordenados del que tiene más señales al que tiene menos y, "
          "dentro de eso, del mínimo más bajo al más alto.</div>", cont)
     if r.empty:
         html("<div class='nota'>No hay cambios con señales de política.</div>", cont)
     else:
-        cont.dataframe(tabla_casos_pol(r), hide_index=True, width=ANCHO, height=520)
+        tabla_casos_html(cont, r)
     st.download_button("Descargar todo en Excel (política del 15%)", icon=":material/download:",
                        data=politica_excel(), file_name="politica_15.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -1567,8 +1769,8 @@ def politica_excel() -> bytes:
         for nombre, t in [("Casos con señal", tabla_casos_pol(x[x["Núm. señales política"] > 0])),
                           ("Ventanas de precio bajo", tabla_ventanas(x)),
                           ("Fuera de lo normal", tabla_atipicos(x)),
-                          ("Por autorizador", tabla_pol(x, "Autorizó")),
-                          ("Por solicitante", tabla_pol(x, "Solicitó", minimo=10)),
+                          ("Por autorizador", tabla_pol(x, "Autorizó", unidad="Unidad donde más autorizó")),
+                          ("Por solicitante", tabla_pol(x, "Solicitó", minimo=10, unidad="Unidad operativa")),
                           ("Por unidad", tabla_unidades_pol(x)[0])]:
             t.to_excel(xw, sheet_name=nombre, index=False)
             ws = xw.book[nombre]
