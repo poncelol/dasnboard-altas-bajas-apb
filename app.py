@@ -1962,22 +1962,19 @@ def pagina_politica() -> None:
         justificación. Todo se puede bajar en Excel con el botón del final.</small></div></li></ul>""", cont)
 
     seccion("Resumen")
-    dentro = int(((x["SCMARMINSOL"] >= POL_MIN - EPS) & (x["SCMARMAXSOL"] <= POL_MAX + EPS)).sum())
     bajo_min = int((x["SCMARMINSOL"] < POL_MIN - EPS).sum())
     bajo_piso = int((x["SCMARMINSOL"] < POL_PISO).sum())
     max_arr = int((x["SCMARMAXSOL"] > POL_MAX + EPS).sum())
     aleja = int(x[D_ALEJA].sum())
     acerca = int((x["Dirección política"] == D_ACERCA).sum())
-    c = st.columns(5, gap="medium")
-    stat(c[0], "Rangos dentro de la política", f"{100 * dentro / n:.0f}%", "verified", VERDE, 100 * dentro / n,
-         f"{dentro:,} de {n:,} cambios quedan con mínimo ≥ {POL_MIN:g}% y máximo ≤ {POL_MAX:g}%")
-    stat(c[1], f"Mínimos abajo del {POL_MIN:g}%", f"{100 * bajo_min / n:.0f}%", "south", AMARILLO,
+    c = st.columns(4, gap="medium")
+    stat(c[0], f"Mínimos abajo del {POL_MIN:g}%", f"{100 * bajo_min / n:.0f}%", "south", AMARILLO,
          100 * bajo_min / n, f"{bajo_min:,} cambios dejan el mínimo abajo de la política")
-    stat(c[2], f"Mínimos abajo del {POL_PISO:g}%", f"{100 * bajo_piso / n:.0f}%", "storefront", ROJO,
+    stat(c[1], f"Mínimos abajo del {POL_PISO:g}%", f"{100 * bajo_piso / n:.0f}%", "storefront", ROJO,
          100 * bajo_piso / n, f"{bajo_piso:,} cambios: no alcanza ni para tienda y Consejos")
-    stat(c[3], f"Máximos arriba del {POL_MAX:g}%", f"{100 * max_arr / n:.0f}%", "north", NARANJA,
+    stat(c[2], f"Máximos arriba del {POL_MAX:g}%", f"{100 * max_arr / n:.0f}%", "north", NARANJA,
          100 * max_arr / n, f"{max_arr:,} cambios permiten vender más caro que la política")
-    stat(c[4], "Cambios que se alejan de la política", f"{100 * aleja / n:.0f}%", "call_split", ROJO,
+    stat(c[3], "Cambios que se alejan de la política", f"{100 * aleja / n:.0f}%", "call_split", ROJO,
          100 * aleja / n, f"{aleja:,} empeoran el rango · {acerca:,} ({100 * acerca / n:.0f}%) lo corrigen")
 
     seccion("¿Dónde quedaron los márgenes?")
