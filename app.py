@@ -2102,11 +2102,21 @@ def pagina_politica() -> None:
     cont = card("Unidades operativas (10 o más cambios)", "store")
     nombres = ", ".join(f"<b>{u}</b> ({p:.0f}%)" for u, p in zip(reinc["Unidad operativa"].head(5),
                                                                    reinc[al].head(5)))
-    html(f"<div class='nota' style='min-height:0'>En promedio, <b>{base:.0f} de cada 100</b> cambios empeoran el "
-         f"rango. Una unidad es <b>reincidente</b> si le pasa {POL_REINCIDENTE:g} veces más que al promedio "
-         f"({POL_REINCIDENTE * base:.0f} de cada 100 o más). "
-         + (f"Hay <b>{len(reinc)}</b>: {nombres}{' y otras' if len(reinc) > 5 else ''}." if len(reinc) else
-            "Ninguna unidad es reincidente.") + "</div>", cont)
+    limite = POL_REINCIDENTE * base
+    html(f"""<div class='aviso' style='background:#fff1f0;border-color:#ffa39e;margin:6px 0 10px'>
+        {ic('report', ROJO)}<div><b>¿Qué es <span class='chip-sem' style='color:#cf1322;border-color:#ffa39e;
+        background:#fff'>Reincidente</span>?</b> Es una unidad donde los cambios que <b>sacan el rango de la
+        política</b> pasan mucho más seguido que en las demás. Se marca si tiene <b>10 cambios o más</b> y su
+        porcentaje de cambios que se alejan de la política es <b>{POL_REINCIDENTE:g} veces el promedio</b> o más.
+        <br><small><b>Con estos datos:</b> en promedio {base:.0f} de cada 100 cambios se alejan, así que el
+        límite es {base:.0f} × {POL_REINCIDENTE:g} = <b>{min(limite, 100):.0f} de cada 100</b>
+        {'(como pasa de 100, ninguna unidad puede llegar)' if limite > 100 else ''}. Es una señal para
+        <b>pedir justificación</b>, no prueba de una falta. Escribe «reincidente» en el buscador para ver solo
+        esas.</small></div></div>""", cont)
+    html("<div class='nota' style='min-height:0'>"
+         + (f"Hay <b>{len(reinc)}</b> reincidente{'s' if len(reinc) != 1 else ''}: {nombres}"
+            f"{' y otras' if len(reinc) > 5 else ''}." if len(reinc) else
+            "Por ahora <b>ninguna unidad es reincidente</b>.") + "</div>", cont)
     tabla_resumen_html(cont, tu, [
         ("Unidad operativa", "región", lambda f: (
             f"<td><b>{escape(str(f['Unidad operativa']))}</b><div class='sub'>{escape(str(f['Región']))}</div>"
