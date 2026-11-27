@@ -290,8 +290,8 @@ DETALLE_COLS = {
     "Cambio mín.": "Cambio mín.", "DETERMINACION_MIN": "Determinación mín.", "SCMARMAXACT": "Máx. actual",
     "SCMARMAXSOL": "Máx. solicitado", "Cambio máx.": "Cambio máx.", "DETERMINACION_MAX": "Determinación máx.",
     "Núm. alertas": "Núm. alertas", "Alertas": "Alertas",
-    "Franja mín.": "Franja del mínimo (política 15%)", "Máximo vs. política": "Máximo vs. política 15%",
-    "Dirección política": "¿Se acerca o se aleja del 15%?", "Señales de política": "Señales de política",
+    "Franja mín.": "Franja del mínimo (política 10–15%)", "Máximo vs. política": "Máximo vs. política (15%)",
+    "Dirección política": "¿Se acerca o se aleja de la política?", "Señales de política": "Señales de política",
 }
 
 
@@ -996,28 +996,29 @@ COLORES_INV = {"Mercancía para tiendas": AZUL, "INPI (pueblos indígenas)": NAR
                "DIF estatal": ROSA}
 
 
-# ================================================================ política del 15%
-# "Política de Precios de Venta de los productos adicionales a la Canasta Básica" (29/01/2020):
-# precio de venta = precio de costo x 1.1765 -> 15% de utilidad sobre la venta, que se reparte en
-# 6% para la tienda, 1.5% para los Consejos Comunitarios y 7.5% para gastos de operación.
-POL = 15.0
+# ================================================================ política de márgenes (10% a 15%)
+# Política vigente: margen mínimo 10% y máximo 15% sobre la venta. Un rango está en política si mín >= 10 y
+# máx <= 15. La "Política de Precios de Venta de los productos adicionales a la Canasta Básica" (29/01/2020) fija
+# el 15% (precio = costo x 1.1765) y lo reparte en 6% tienda, 1.5% Consejos Comunitarios y 7.5% gastos de operación.
+POL_MIN, POL_MAX = 10.0, 15.0
+POL_TXT = f"{POL_MIN:g}% a {POL_MAX:g}%"
 POL_FACTOR = 1.1765
 POL_TIENDA, POL_CONSEJOS = 6.0, 1.5
 POL_PISO = POL_TIENDA + POL_CONSEJOS  # 7.5: debajo de esto no se paga ni tienda ni Consejos
 POL_ATIPICO = 10.0  # puntos de diferencia contra el mínimo típico del mismo producto
 POL_MIN_UO = 3  # unidades/inventarios con el producto para poder comparar
-POL_REINCIDENTE = 1.5  # una unidad es reincidente si se aleja del 15% 1.5 veces más que el promedio
+POL_REINCIDENTE = 1.5  # una unidad es reincidente si se aleja de la política 1.5 veces más que el promedio
 EPS = 0.005
 
 F_COSTO = "Menos de 0%: abajo del costo"
 F_PISO = f"0 a {POL_PISO:g}%: no paga tienda ni Consejos"
-F_OPER = f"{POL_PISO:g} a {POL:g}%: no cubre gastos de operación"
-F_OK = f"{POL:g}%: lo que marca la política"
-F_ARRIBA = f"Más de {POL:g}%: arriba de la política"
-COLORES_FRANJA = {F_COSTO: "#a8071a", F_PISO: ROJO, F_OPER: AMARILLO, F_OK: VERDE, F_ARRIBA: NARANJA}
-MAX_OK, MAX_ARRIBA = f"Máximo en {POL:g}% o menos", f"Máximo arriba de {POL:g}%"
+F_BAJO = f"{POL_PISO:g} a {POL_MIN:g}%: abajo del mínimo de la política"
+F_OK = f"{POL_MIN:g} a {POL_MAX:g}%: dentro de la política"
+F_ARRIBA = f"Más de {POL_MAX:g}%: arriba del máximo de la política"
+COLORES_FRANJA = {F_COSTO: "#a8071a", F_PISO: ROJO, F_BAJO: AMARILLO, F_OK: VERDE, F_ARRIBA: NARANJA}
+MAX_OK, MAX_ARRIBA = f"Máximo en {POL_MAX:g}% o menos", f"Máximo arriba de {POL_MAX:g}%"
 COLORES_MAXPOL = {MAX_OK: VERDE, MAX_ARRIBA: NARANJA}
-D_ACERCA, D_ALEJA, D_IGUAL = f"Se acerca al {POL:g}%", f"Se aleja del {POL:g}%", "Queda igual de lejos"
+D_ACERCA, D_ALEJA, D_IGUAL = "Se acerca a la política", "Se aleja de la política", "Queda igual de lejos"
 COLORES_DIR = {D_ACERCA: VERDE, D_ALEJA: ROJO, D_IGUAL: GRIS}
 
 SEÑALES_POL = {
@@ -1025,7 +1026,7 @@ SEÑALES_POL = {
     "Mínimo no paga tienda ni Consejos":
         f"El mínimo autorizado queda entre 0 y {POL_PISO:g}%: no alcanza para el {POL_TIENDA:g}% de la tienda "
         f"y el {POL_CONSEJOS:g}% de los Consejos Comunitarios.",
-    D_ALEJA: f"Después del cambio, el rango (mínimo y máximo) queda más lejos del {POL:g}% que antes.",
+    D_ALEJA: f"Después del cambio, el rango (mínimo y máximo) queda más fuera de la política ({POL_TXT}) que antes.",
     "Ventana de precio bajo":
         f"El cambio anterior bajó el mínimo y este lo vuelve a subir, con menos de {U['u_dias']} días entre uno "
         "y otro: se abrió una ventana para vender barato y luego se cerró.",
@@ -1039,20 +1040,25 @@ ICONOS_POL = {"Mínimo abajo del costo": "money_off", "Mínimo no paga tienda ni
 
 
 def franja_min(s: pd.Series) -> pd.Series:
-    return pd.Series(np.select([s.isna(), s < 0, s < POL_PISO, s < POL - EPS, s <= POL + EPS],
-                               ["Sin dato", F_COSTO, F_PISO, F_OPER, F_OK], F_ARRIBA), index=s.index)
+    return pd.Series(np.select([s.isna(), s < 0, s < POL_PISO, s < POL_MIN - EPS, s <= POL_MAX + EPS],
+                               ["Sin dato", F_COSTO, F_PISO, F_BAJO, F_OK], F_ARRIBA), index=s.index)
+
+
+def fuera(v: pd.Series) -> pd.Series:
+    """Cuántos puntos se sale un margen de la banda de la política (0 si está entre 10 y 15)."""
+    return (POL_MIN - v).clip(lower=0) + (v - POL_MAX).clip(lower=0)
 
 
 def politica(d_: pd.DataFrame) -> pd.DataFrame:
-    """Compara cada rango autorizado contra el 15% y marca las señales de política."""
+    """Compara cada rango autorizado contra la política (10% a 15%) y marca las señales de política."""
     d_["Franja mín. antes"] = franja_min(d_["SCMARMINACT"])
     d_["Franja mín."] = franja_min(d_["SCMARMINSOL"])
-    d_["Máximo vs. política"] = np.where(d_["SCMARMAXSOL"] > POL + EPS, MAX_ARRIBA, MAX_OK)
-    # qué tan lejos está el rango del 15%: |mín - 15| + |máx - 15|
-    d_["Distancia al 15% antes"] = (d_["SCMARMINACT"] - POL).abs() + (d_["SCMARMAXACT"] - POL).abs()
-    d_["Distancia al 15% después"] = (d_["SCMARMINSOL"] - POL).abs() + (d_["SCMARMAXSOL"] - POL).abs()
-    dd = d_["Distancia al 15% después"] - d_["Distancia al 15% antes"]
-    d_["Cambio de distancia"] = dd  # positivo = se alejó del 15%; negativo = se acercó
+    d_["Máximo vs. política"] = np.where(d_["SCMARMAXSOL"] > POL_MAX + EPS, MAX_ARRIBA, MAX_OK)
+    # distancia a la política: cuánto se sale el mínimo de 10–15 más cuánto se sale el máximo
+    d_["Distancia a la política antes"] = fuera(d_["SCMARMINACT"]) + fuera(d_["SCMARMAXACT"])
+    d_["Distancia a la política después"] = fuera(d_["SCMARMINSOL"]) + fuera(d_["SCMARMAXSOL"])
+    dd = d_["Distancia a la política después"] - d_["Distancia a la política antes"]
+    d_["Cambio de distancia"] = dd  # positivo = se alejó de la política; negativo = se acercó
     d_["Dirección política"] = np.select([dd < -EPS, dd > EPS], [D_ACERCA, D_ALEJA], D_IGUAL)
     # mínimo típico del producto: mediana del último mínimo autorizado en cada unidad/inventario
     ult = d_.sort_values("FCHAUT").groupby("Clave producto-UO").tail(1)
@@ -1633,15 +1639,15 @@ def tabla_pol(x: pd.DataFrame, por, minimo: int = 1, unidad: str | None = None) 
     t = pd.DataFrame({
         **({unidad: unidad_principal(x, por)} if unidad else {}),
         "Cambios": g.size(),
-        f"% se aleja del {POL:g}%": 100 * g[D_ALEJA].mean(),
-        f"% se acerca al {POL:g}%": 100 * g["Dirección política"].apply(lambda s: (s == D_ACERCA).mean()),
-        f"% mínimo abajo de {POL:g}%": 100 * g["SCMARMINSOL"].apply(lambda s: (s < POL - EPS).mean()),
+        "% se aleja de la política": 100 * g[D_ALEJA].mean(),
+        "% se acerca a la política": 100 * g["Dirección política"].apply(lambda s: (s == D_ACERCA).mean()),
+        f"% mínimo abajo de {POL_MIN:g}%": 100 * g["SCMARMINSOL"].apply(lambda s: (s < POL_MIN - EPS).mean()),
         f"% mínimo abajo de {POL_PISO:g}%": 100 * g["SCMARMINSOL"].apply(lambda s: (s < POL_PISO).mean()),
-        f"% máximo arriba de {POL:g}%": 100 * g["SCMARMAXSOL"].apply(lambda s: (s > POL + EPS).mean()),
+        f"% máximo arriba de {POL_MAX:g}%": 100 * g["SCMARMAXSOL"].apply(lambda s: (s > POL_MAX + EPS).mean()),
         "Cambios con señal de política": g["Núm. señales política"].apply(lambda s: int((s > 0).sum())),
     })
     t = t[t["Cambios"] >= minimo].round(1)
-    return t.sort_values(f"% se aleja del {POL:g}%", ascending=False).reset_index()
+    return t.sort_values("% se aleja de la política", ascending=False).reset_index()
 
 
 def tabla_unidades_pol(x: pd.DataFrame) -> tuple[pd.DataFrame, float]:
@@ -1649,7 +1655,7 @@ def tabla_unidades_pol(x: pd.DataFrame) -> tuple[pd.DataFrame, float]:
         columns={"NOMBRE DE UNIDAD OP.": "Unidad operativa"})
     t["Unidad operativa"] = t["Unidad operativa"].str.title()
     base = 100 * x[D_ALEJA].mean()
-    t.insert(2, "¿Reincidente?", np.where(t[f"% se aleja del {POL:g}%"] >= POL_REINCIDENTE * base, "Sí", ""))
+    t.insert(2, "¿Reincidente?", np.where(t["% se aleja de la política"] >= POL_REINCIDENTE * base, "Sí", ""))
     return t, base
 
 
@@ -1767,11 +1773,11 @@ def tabla_html(dest, cab: list[tuple[str, str, bool]], filas: list[str], total: 
 
 def cols_pct() -> list[tuple[str, str, str, bool]]:
     """(columna, título, subtítulo, ¿más es peor?)"""
-    return [(f"% se aleja del {POL:g}%", "Empeoran", f"se alejan del {POL:g}%", True),
-            (f"% se acerca al {POL:g}%", "Corrigen", f"se acercan al {POL:g}%", False),
-            (f"% mínimo abajo de {POL:g}%", f"Mín. &lt; {POL:g}%", "abajo de la política", True),
+    return [("% se aleja de la política", "Empeoran", "se alejan de la política", True),
+            ("% se acerca a la política", "Corrigen", "se acercan a la política", False),
+            (f"% mínimo abajo de {POL_MIN:g}%", f"Mín. &lt; {POL_MIN:g}%", "abajo de la política", True),
             (f"% mínimo abajo de {POL_PISO:g}%", f"Mín. &lt; {POL_PISO:g}%", "no paga tienda ni Consejos", True),
-            (f"% máximo arriba de {POL:g}%", f"Máx. &gt; {POL:g}%", "más caro que la política", True)]
+            (f"% máximo arriba de {POL_MAX:g}%", f"Máx. &gt; {POL_MAX:g}%", "más caro que la política", True)]
 
 
 def tabla_resumen_html(dest, t: pd.DataFrame, ident: list[tuple[str, str, object]], buscar: str | None = None,
@@ -1819,14 +1825,14 @@ def tabla_casos_html(dest, r: pd.DataFrame) -> None:
 
 
 def tabla_direccion_html(dest, r: pd.DataFrame, direccion: str) -> None:
-    """Cambios que se acercan / se alejan / quedan igual de lejos del 15%, con todos sus datos."""
+    """Cambios que se acercan / se alejan / quedan igual de lejos de la política, con todos sus datos."""
     if direccion == D_ALEJA:
         r = r.sort_values("Cambio de distancia", ascending=False)  # los que más se alejaron primero
     elif direccion == D_ACERCA:
         r = r.sort_values("Cambio de distancia")  # los que más se acercaron primero
     else:
         r = r.sort_values("FCHAUT", ascending=False)
-    cab = [(f"Distancia al {POL:g}%", "antes → después", True), ("Producto", "", False),
+    cab = [("Distancia a la política", "antes → después", True), ("Producto", "", False),
            ("Región / unidad", "", False), ("Mínimo", "antes → después", True), ("Máximo", "antes → después", True),
            ("Franja del mínimo", "", False), ("Otras señales", "de política", False),
            ("Autorizó / pidió", "", False), ("Fecha / folio", "", False)]
@@ -1839,8 +1845,8 @@ def tabla_direccion_html(dest, r: pd.DataFrame, direccion: str) -> None:
                            for z in otras) or f"<span style='color:{TEXTO_2}'>Ninguna</span>")
         fr = COLORES_FRANJA.get(f["Franja mín."], GRIS)
         filas.append(
-            f"<tr><td class='num'><span class='antes'>{num(f['Distancia al 15% antes'])}</span> → "
-            f"<b style='color:{c_}'>{num(f['Distancia al 15% después'])}</b>"
+            f"<tr><td class='num'><span class='antes'>{num(f['Distancia a la política antes'])}</span> → "
+            f"<b style='color:{c_}'>{num(f['Distancia a la política después'])}</b>"
             f"<div class='sub' style='color:{c_}'>{'+' if dd > 0 else ''}{num(dd)} pts</div></td>"
             f"<td class='prod'><b>{escape(str(f['Producto']))}</b><div class='sub'>"
             f"{escape(str(f['Inventario (corto)']))} · {escape(str(f['Tipo de cambio']))}</div></td>"
@@ -1858,11 +1864,11 @@ def tabla_direccion_html(dest, r: pd.DataFrame, direccion: str) -> None:
 
 
 def tabla_direccion(r: pd.DataFrame) -> pd.DataFrame:
-    """Versión para Excel del listado de cambios que se acercan / se alejan del 15%."""
+    """Versión para Excel del listado de cambios que se acercan / se alejan de la política."""
     return pd.DataFrame({
-        f"¿Se acerca o se aleja del {POL:g}%?": r["Dirección política"],
-        f"Distancia al {POL:g}% antes": r["Distancia al 15% antes"].round(2),
-        f"Distancia al {POL:g}% después": r["Distancia al 15% después"].round(2),
+        "¿Se acerca o se aleja de la política?": r["Dirección política"],
+        "Distancia a la política antes": r["Distancia a la política antes"].round(2),
+        "Distancia a la política después": r["Distancia a la política después"].round(2),
         "Cambio de distancia (pts)": r["Cambio de distancia"].round(2),
         "Producto": r["Producto"], "Cve. producto": r["CVE. DE PRODUCTO"], "Inventario": r["Inventario (corto)"],
         "Tipo de cambio": r["Tipo de cambio"], "Región": r["Región"],
@@ -1872,7 +1878,7 @@ def tabla_direccion(r: pd.DataFrame) -> pd.DataFrame:
         "Franja del mínimo": r["Franja mín."], "Señales de política": r["Señales de política"],
         "Autorizó": r["Autorizó"], "Pidió": r["Solicitó"], "Pedido el": r["FCHSOL"], "Autorizado el": r["FCHAUT"],
         "Folio": r["SCFOLIO"], "Mes": r["Mes"].map(mes_largo),
-    }).sort_values([f"¿Se acerca o se aleja del {POL:g}%?", "Cambio de distancia (pts)"], ascending=[False, False])
+    }).sort_values(["¿Se acerca o se aleja de la política?", "Cambio de distancia (pts)"], ascending=[False, False])
 
 
 def tabla_ventanas_html(dest, tv: pd.DataFrame) -> None:
@@ -1928,25 +1934,25 @@ def tabla_atipicos_html(dest, ta: pd.DataFrame) -> None:
 def pagina_politica() -> None:
     x = D
     n = len(x)
-    encabezado(f"Política del {POL:g}%",
-               "Cada margen autorizado comparado contra la política de precios de venta de la Dirección Comercial",
+    encabezado(f"Política de márgenes ({POL_TXT})",
+               f"Cada rango autorizado comparado contra la política: mínimo {POL_MIN:g}% y máximo {POL_MAX:g}%",
                "General")
-    html(f"""<div class='aviso'>{ic('policy')}<div><b>La regla:</b> precio de venta = costo × {POL_FACTOR}, es
-        decir <b>{POL:g}% de utilidad sobre la venta</b>, que se reparte en {POL_TIENDA:g}% para la tienda,
-        {POL_CONSEJOS:g}% para los Consejos Comunitarios y {POL - POL_PISO:g}% para gastos de operación
-        (Política de Precios de Venta, 29/01/2020). Aquí se compara cada rango autorizado contra ese
-        {POL:g}%.<br><small>No se puede revisar si el precio queda 5% abajo de la competencia porque el archivo no
+    html(f"""<div class='aviso'>{ic('policy')}<div><b>La política:</b> margen <b>mínimo de {POL_MIN:g}%</b> y <b>máximo de
+        {POL_MAX:g}%</b> sobre la venta. Un rango está bien si su mínimo es {POL_MIN:g}% o más y su máximo
+        {POL_MAX:g}% o menos. La nota de la Dirección Comercial (29/01/2020) fija el {POL_MAX:g}%
+        (precio = costo × {POL_FACTOR}) y lo reparte en {POL_TIENDA:g}% para la tienda, {POL_CONSEJOS:g}% para los
+        Consejos Comunitarios y {POL_MAX - POL_PISO:g}% para gastos de operación.<br><small>No se puede revisar si el precio queda 5% abajo de la competencia porque el archivo no
         trae costos ni precios. Los incisos h e i del Manual permiten vender abajo del margen con
         <b>autorización por escrito</b>; el archivo no dice si existe ese oficio, así que estas señales sirven
         para <b>pedir la justificación</b>, no prueban una falta.</small></div></div>""")
     cont = card("¿Cómo leer esta página?", "menu_book")
     html(f"""<ul class='lista'>
         <li><span class='dot'>1</span><div><b>¿Dónde quedaron los márgenes?</b><small>Cuántos mínimos y
-        máximos autorizados quedaron arriba, abajo o justo en el {POL:g}%. Entre más rojo, menos alcanza el margen
-        para pagar la tienda, los Consejos y la operación.</small></div></li>
+        máximos autorizados quedaron dentro de la política ({POL_TXT}), abajo o arriba. Entre más rojo, menos
+        alcanza el margen para pagar la tienda, los Consejos y la operación.</small></div></li>
         <li><span class='dot'>2</span><div><b>¿Los cambios corrigen o empeoran?</b><small>Un cambio
-        <b>corrige</b> si deja el rango más cerca del {POL:g}% y <b>empeora</b> si lo deja más lejos.
-        Ejemplo: bajar el mínimo de 17 a 16 corrige; bajarlo de 15 a 5 empeora.</small></div></li>
+        <b>corrige</b> si deja el rango más dentro de la política ({POL_TXT}) y <b>empeora</b> si lo saca más.
+        Ejemplo: bajar el mínimo de 17 a 16 corrige; bajarlo de 12 a 5 empeora.</small></div></li>
         <li><span class='dot'>3</span><div><b>Señales de posible mala práctica</b><small>Cinco situaciones que
         conviene preguntar, como bajar el mínimo y volverlo a subir a los pocos días.</small></div></li>
         <li><span class='dot'>4</span><div><b>¿Quién y dónde?</b><small>Las mismas cifras por persona que
@@ -1956,36 +1962,40 @@ def pagina_politica() -> None:
         justificación. Todo se puede bajar en Excel con el botón del final.</small></div></li></ul>""", cont)
 
     seccion("Resumen")
-    bajo15 = int((x["SCMARMINSOL"] < POL - EPS).sum())
+    dentro = int(((x["SCMARMINSOL"] >= POL_MIN - EPS) & (x["SCMARMAXSOL"] <= POL_MAX + EPS)).sum())
+    bajo_min = int((x["SCMARMINSOL"] < POL_MIN - EPS).sum())
     bajo_piso = int((x["SCMARMINSOL"] < POL_PISO).sum())
-    max_arr = int((x["SCMARMAXSOL"] > POL + EPS).sum())
+    max_arr = int((x["SCMARMAXSOL"] > POL_MAX + EPS).sum())
     aleja = int(x[D_ALEJA].sum())
     acerca = int((x["Dirección política"] == D_ACERCA).sum())
-    c = st.columns(4, gap="medium")
-    stat(c[0], f"Mínimos abajo del {POL:g}%", f"{100 * bajo15 / n:.0f}%", "south", AMARILLO, 100 * bajo15 / n,
-         f"{bajo15:,} de {n:,} cambios dejan el mínimo abajo de la política")
-    stat(c[1], f"Mínimos abajo del {POL_PISO:g}%", f"{100 * bajo_piso / n:.0f}%", "storefront", ROJO,
+    c = st.columns(5, gap="medium")
+    stat(c[0], "Rangos dentro de la política", f"{100 * dentro / n:.0f}%", "verified", VERDE, 100 * dentro / n,
+         f"{dentro:,} de {n:,} cambios quedan con mínimo ≥ {POL_MIN:g}% y máximo ≤ {POL_MAX:g}%")
+    stat(c[1], f"Mínimos abajo del {POL_MIN:g}%", f"{100 * bajo_min / n:.0f}%", "south", AMARILLO,
+         100 * bajo_min / n, f"{bajo_min:,} cambios dejan el mínimo abajo de la política")
+    stat(c[2], f"Mínimos abajo del {POL_PISO:g}%", f"{100 * bajo_piso / n:.0f}%", "storefront", ROJO,
          100 * bajo_piso / n, f"{bajo_piso:,} cambios: no alcanza ni para tienda y Consejos")
-    stat(c[2], f"Máximos arriba del {POL:g}%", f"{100 * max_arr / n:.0f}%", "north", NARANJA, 100 * max_arr / n,
-         f"{max_arr:,} cambios permiten vender más caro que la política")
-    stat(c[3], f"Cambios que se alejan del {POL:g}%", f"{100 * aleja / n:.0f}%", "call_split", ROJO,
+    stat(c[3], f"Máximos arriba del {POL_MAX:g}%", f"{100 * max_arr / n:.0f}%", "north", NARANJA,
+         100 * max_arr / n, f"{max_arr:,} cambios permiten vender más caro que la política")
+    stat(c[4], "Cambios que se alejan de la política", f"{100 * aleja / n:.0f}%", "call_split", ROJO,
          100 * aleja / n, f"{aleja:,} empeoran el rango · {acerca:,} ({100 * acerca / n:.0f}%) lo corrigen")
 
     seccion("¿Dónde quedaron los márgenes?")
     c = st.columns(2, gap="medium")
     card_pastel(c[0], "Margen mínimo autorizado", "south", x["Franja mín."], COLORES_FRANJA,
-                nota=f"Cada franja dice qué alcanza a pagar el mínimo: debajo de {POL_PISO:g}% no se paga ni la "
-                     f"tienda ni los Consejos; entre {POL_PISO:g} y {POL:g}% no se cubren los gastos de operación.")
+                nota=f"Verde = dentro de la política ({POL_TXT}). Abajo de {POL_MIN:g}% el mínimo no respeta la "
+                     f"política; abajo de {POL_PISO:g}% ni siquiera paga la tienda y los Consejos; arriba de "
+                     f"{POL_MAX:g}% el mínimo ya pasa el máximo permitido.")
     card_pastel(c[1], "Margen máximo autorizado", "north", x["Máximo vs. política"], COLORES_MAXPOL,
-                nota=f"Un máximo arriba de {POL:g}% permite poner precios más altos que la política, con riesgo de "
+                nota=f"Un máximo arriba de {POL_MAX:g}% permite poner precios más altos que la política, con riesgo de "
                      "quedar más caro que la competencia.")
 
     seccion("¿Los cambios corrigen o empeoran el rango?")
     c = st.columns(2, gap="medium")
-    card_pastel(c[0], f"¿Se acerca o se aleja del {POL:g}%?", "call_split", x["Dirección política"], COLORES_DIR,
-                nota=f"Se mide qué tan lejos está el rango del {POL:g}% (sumando la distancia del mínimo y la del "
-                     f"máximo) antes y después del cambio. Ejemplo: bajar el mínimo de 17 a 16 <b>se acerca</b>; "
-                     f"bajarlo de 15 a 5 <b>se aleja</b>.")
+    card_pastel(c[0], "¿Se acerca o se aleja de la política?", "call_split", x["Dirección política"], COLORES_DIR,
+                nota=f"Se mide cuánto se sale el rango de la política ({POL_TXT}): lo que el mínimo queda fuera más "
+                     f"lo que el máximo queda fuera, antes y después del cambio. Ejemplo: bajar el mínimo de 17 a 16 "
+                     f"<b>se acerca</b>; bajarlo de 12 a 5 <b>se aleja</b>.")
     orden_f = [k for k in COLORES_FRANJA]
     ad = (pd.concat([x["Franja mín. antes"].value_counts().rename("Antes del cambio"),
                      x["Franja mín."].value_counts().rename("Después del cambio")], axis=1)
@@ -2003,10 +2013,11 @@ def pagina_politica() -> None:
          "<b>bajando</b> los mínimos por debajo de la política.</div>", cont)
     mostrar(estilo(fig, 400), cont)
 
-    cont = card(f"¿Cuáles son? Listado de los cambios que se acercan o se alejan del {POL:g}%", "list_alt")
+    cont = card("¿Cuáles son? Listado de los cambios que se acercan o se alejan de la política", "list_alt")
     html(f"""<div class='nota' style='min-height:0'>Cada pestaña tiene sus cambios con todos los datos.
-        <b>Distancia al {POL:g}%</b> = qué tan lejos queda el rango de la política, sumando lo que se separan el
-        mínimo y el máximo del {POL:g}%. Ejemplo: un rango de 10 a 25 está a 5 + 10 = <b>15 puntos</b>.
+        <b>Distancia a la política</b> = cuántos puntos se sale el rango de la banda {POL_TXT}: lo que el mínimo
+        queda fuera más lo que el máximo queda fuera. Ejemplo: un rango de 5 a 25 está a 5 + 10 =
+        <b>15 puntos</b>; uno de {POL_MIN:g} a {POL_MAX:g} está a <b>0</b>.
         Abajo dice cuánto cambió con este movimiento: <b style='color:#cf1322'>+ = se alejó</b>,
         <b style='color:#389e0d'>− = se acercó</b>. <b>Se alejan</b> va del que más se alejó al que menos;
         <b>Se acercan</b>, del que más se acercó al que menos. <b>Otras señales</b> muestra las demás señales de
@@ -2034,7 +2045,7 @@ def pagina_politica() -> None:
     fig.update_xaxes(title="")
     cont = card("Mes a mes: ¿se corrige o se empeora?", "bar_chart")
     pa = pm[pm["Dirección política"] == D_ALEJA].set_index("Mes")["%"]
-    html(f"<div class='nota'>El mes en que más cambios se alejaron del {POL:g}% fue "
+    html(f"<div class='nota'>El mes en que más cambios se alejaron de la política fue "
          f"<b>{mes_largo(pa.idxmax())}</b> ({pa.max():.0f}% de sus cambios).</div>" if not pa.empty else
          "<div class='nota'>Ningún cambio se alejó de la política.</div>", cont)
     mostrar(estilo(fig, 340), cont)
@@ -2049,14 +2060,14 @@ def pagina_politica() -> None:
         for k, v in SEÑALES_POL.items()) + "</ul>", cont)
 
     seccion("¿Quién y dónde?")
-    al, ac = f"% se aleja del {POL:g}%", f"% se acerca al {POL:g}%"
+    al, ac = "% se aleja de la política", "% se acerca a la política"
     html(f"""<div class='aviso' style='background:#f5f9ff;border-color:#d6e4ff'>{ic('help', AZUL)}<div>
         <b>Cómo leer las tablas:</b> cada porcentaje es <b>de cada 100 cambios de esa fila</b>.
         <b>{al}</b> = cuántos dejaron el rango más lejos de la política (empeoran) ·
         <b>{ac}</b> = cuántos lo corrigieron ·
-        <b>% mínimo abajo de {POL:g}%</b> = cuántos dejaron el mínimo debajo de la política ·
+        <b>% mínimo abajo de {POL_MIN:g}%</b> = cuántos dejaron el mínimo debajo de la política ·
         <b>% mínimo abajo de {POL_PISO:g}%</b> = cuántos dejaron un mínimo que no paga tienda ni Consejos ·
-        <b>% máximo arriba de {POL:g}%</b> = cuántos permiten vender más caro que la política.</div></div>""")
+        <b>% máximo arriba de {POL_MAX:g}%</b> = cuántos permiten vender más caro que la política.</div></div>""")
 
     ta_ = tabla_pol(x, "Autorizó", unidad="Unidad donde más autorizó")
     cont = card("Por persona que autorizó", "how_to_reg")
@@ -2077,7 +2088,7 @@ def pagina_politica() -> None:
         f = ts_.iloc[0]
         html(f"<div class='nota' style='min-height:0'>Ordenado de quien más pide cambios que empeoran el rango a "
              f"quien menos. Encabeza <b>{f['Solicitó']}</b>, de <b>{f['Unidad operativa'].split(':')[0]}</b>: "
-             f"de cada 100 cambios que pidió, <b>{f[al]:.0f}</b> se alejan del {POL:g}%. La columna "
+             f"de cada 100 cambios que pidió, <b>{f[al]:.0f}</b> se alejan de la política. La columna "
              "<b>Unidad operativa</b> dice desde qué unidad pide más cambios cada persona.</div>", cont)
         uo_ = ts_["Unidad operativa"].str.rpartition(": ")[0]
         tabla_resumen_html(cont, ts_, [
@@ -2132,8 +2143,8 @@ def pagina_politica() -> None:
         html("<div class='nota'>No hay cambios con señales de política.</div>", cont)
     else:
         tabla_casos_html(cont, r)
-    st.download_button("Descargar todo en Excel (política del 15%)", icon=":material/download:",
-                       data=politica_excel(), file_name="politica_15.xlsx",
+    st.download_button(f"Descargar todo en Excel (política {POL_TXT})", icon=":material/download:",
+                       data=politica_excel(), file_name="politica_margenes.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
@@ -2193,7 +2204,7 @@ paginas = {
         for a in personas
     ],
     "Revisión": [
-        st.Page(pagina_politica, title=f"Política del {POL:g}%", icon=":material/policy:", url_path="politica"),
+        st.Page(pagina_politica, title=f"Política {POL_MIN:g}–{POL_MAX:g}%", icon=":material/policy:", url_path="politica"),
         st.Page(pagina_revisar, title="Qué revisar", icon=":material/flag:", url_path="que-revisar"),
         st.Page(pagina_casos, title="Casos a revisar", icon=":material/fact_check:", url_path="casos"),
     ],
